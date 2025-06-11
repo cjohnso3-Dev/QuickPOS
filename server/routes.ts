@@ -250,13 +250,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid amount" });
       }
       
-      // This would integrate with Stripe to create a payment intent
-      // For now, return a mock response structure
+      // Check for Stripe secret key
+      const stripeKey = process.env.STRIPE_SECRET_KEY;
+      if (!stripeKey) {
+        return res.status(400).json({ 
+          message: "Stripe not configured. Please add your STRIPE_SECRET_KEY to process payments." 
+        });
+      }
+      
+      // Initialize Stripe with the secret key
+      const stripe = require('stripe')(stripeKey);
+      
+      // Create payment intent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: 'usd',
+        metadata: {
+          integration_check: 'accept_a_payment',
+        },
+      });
+      
       res.json({
-        clientSecret: `pi_mock_${Date.now()}_secret_mock`,
+        clientSecret: paymentIntent.client_secret,
         amount: amount
       });
     } catch (error) {
+      console.error('Payment intent creation error:', error);
       res.status(500).json({ message: "Failed to create payment intent" });
     }
   });

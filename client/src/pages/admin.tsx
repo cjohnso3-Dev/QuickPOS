@@ -33,7 +33,12 @@ export default function AdminPage() {
   const {
     data: stats,
     isLoading: statsLoading,
-  } = useQuery({
+  } = useQuery<{
+    todaySales: number;
+    todayOrders: number;
+    lowStockCount: number;
+    activeProductCount: number;
+  }>({
     queryKey: ["/api/stats"],
   });
 
@@ -431,7 +436,7 @@ export default function AdminPage() {
                             <div className="h-4 bg-slate-200 rounded w-12 animate-pulse" />
                           </td>
                           <td className="py-3">
-                            <div className="h-6 bg-slate-200 rounded-full w-20 animate-pulse" />
+                            <div className="h-6 bg-slate-200 rounded-full w-16 animate-pulse" />
                           </td>
                           <td className="py-3">
                             <div className="h-4 bg-slate-200 rounded w-16 animate-pulse" />
@@ -667,16 +672,34 @@ export default function AdminPage() {
                     </Select>
                   </div>
                 </div>
+                <div className="flex justify-end pt-4">
+                  <Button>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Store Settings
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
             {/* API Configuration */}
             <Card>
               <CardHeader>
-                <CardTitle>API Configuration</CardTitle>
+                <CardTitle>Payment Integration</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex">
+                      <AlertTriangle className="text-blue-500 mt-0.5 mr-3 w-5 h-5" />
+                      <div>
+                        <h4 className="text-sm font-medium text-blue-900">Stripe Integration</h4>
+                        <p className="text-sm text-blue-700 mt-1">
+                          To accept payments, you'll need to create a Stripe account and add your API keys. 
+                          Get your keys from the Stripe Dashboard → Developers → API keys section.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                   <div>
                     <Label htmlFor="stripe-publishable">Stripe Publishable Key</Label>
                     <Input
@@ -684,6 +707,7 @@ export default function AdminPage() {
                       type="text"
                       placeholder="pk_test_..."
                     />
+                    <p className="text-xs text-slate-500 mt-1">This key is safe to use in your frontend</p>
                   </div>
                   <div>
                     <Label htmlFor="stripe-secret">Stripe Secret Key</Label>
@@ -692,34 +716,71 @@ export default function AdminPage() {
                       type="password"
                       placeholder="sk_test_..."
                     />
+                    <p className="text-xs text-slate-500 mt-1">This key should be kept secure and not shared</p>
                   </div>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <div className="flex">
-                      <AlertTriangle className="text-blue-500 mt-0.5 mr-3 w-5 h-5" />
-                      <div>
-                        <h4 className="text-sm font-medium text-blue-900">Stripe Integration</h4>
-                        <p className="text-sm text-blue-700 mt-1">
-                          Enter your Stripe API keys to enable payment processing. These keys will be securely stored and encrypted.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                </div>
+                <div className="flex justify-end pt-4">
+                  <Button>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save API Configuration
+                  </Button>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Save Settings */}
-            <div className="flex justify-end space-x-4">
-              <Button variant="outline">Reset</Button>
-              <Button>
-                <Save className="w-4 h-4 mr-2" />
-                Save Settings
-              </Button>
-            </div>
+            {/* Business Hours */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Business Hours</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <Label htmlFor="open-time">Opening Time</Label>
+                    <Input
+                      id="open-time"
+                      type="time"
+                      defaultValue="09:00"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="close-time">Closing Time</Label>
+                    <Input
+                      id="close-time"
+                      type="time"
+                      defaultValue="18:00"
+                    />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <Label>Operating Days</Label>
+                  <div className="grid grid-cols-7 gap-2 mt-2">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                      <div key={day} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          id={day}
+                          defaultChecked={day !== 'Sun'}
+                          className="rounded border-slate-300"
+                        />
+                        <Label htmlFor={day} className="text-sm">{day}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end pt-4">
+                  <Button>
+                    <Save className="w-4 h-4 mr-2" />
+                    Save Business Hours
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
       </Tabs>
 
+      {/* Product Modal */}
       <ProductModal
         open={productModalOpen}
         onOpenChange={closeProductModal}

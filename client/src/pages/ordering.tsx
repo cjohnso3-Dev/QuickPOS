@@ -29,7 +29,7 @@ export default function OrderingPage() {
 
   const {
     data: categories = [],
-  } = useQuery({
+  } = useQuery<any[]>({
     queryKey: ["/api/categories"],
   });
 
@@ -123,22 +123,46 @@ export default function OrderingPage() {
       return;
     }
 
-    const orderData = {
-      order: {
-        customerName: "Walk-in Customer",
-        subtotal: subtotal.toFixed(2),
-        tax: tax.toFixed(2),
-        total: total.toFixed(2),
-        status: "pending",
-      },
-      items: cart.map(item => ({
-        productId: item.product.id,
-        quantity: item.quantity,
-        price: item.product.price,
-      })),
-    };
+    try {
+      // Create payment intent
+      const response = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: total }),
+      });
 
-    createOrderMutation.mutate(orderData);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create payment intent");
+      }
+
+      const { clientSecret } = await response.json();
+
+      // For now, simulate successful payment and create order
+      const orderData = {
+        order: {
+          customerName: "Walk-in Customer",
+          subtotal: subtotal.toFixed(2),
+          tax: tax.toFixed(2),
+          total: total.toFixed(2),
+          status: "completed",
+          paymentId: clientSecret,
+        },
+        items: cart.map(item => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+          price: item.product.price,
+        })),
+      };
+
+      createOrderMutation.mutate(orderData);
+    } catch (error) {
+      toast({
+        title: "Payment failed",
+        description: error instanceof Error ? error.message : "Payment processing failed",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
