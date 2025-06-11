@@ -544,8 +544,13 @@ export class MemStorage implements IStorage {
       minStock: product.minStock || null,
       maxStock: product.maxStock || null,
       isActive: product.isActive !== false,
+      hasSizes: product.hasSizes || false,
       allowModifications: product.allowModifications !== false,
       modificationOptions: product.modificationOptions || null,
+      itemType: product.itemType || "product",
+      requiresInventory: product.requiresInventory !== false,
+      taxable: product.taxable !== false,
+      serviceDetails: product.serviceDetails || null,
       createdAt: new Date()
     };
     this.products.set(id, newProduct);

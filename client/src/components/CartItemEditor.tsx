@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,7 +37,7 @@ export default function CartItemEditor({
       const modifications = cartItem.modifications || [];
       const sizeModification = modifications.find(mod => mod.category === 'size');
       const otherModifications = modifications.filter(mod => mod.category !== 'size');
-      
+
       setSelectedSize(sizeModification || null);
       setSelectedModifiers(otherModifications);
       setSpecialInstructions(cartItem.specialInstructions || "");
@@ -73,7 +72,7 @@ export default function CartItemEditor({
   const handleUpdate = () => {
     const finalPrice = calculateTotalPrice();
     const allModifiers = selectedSize ? [selectedSize, ...selectedModifiers] : selectedModifiers;
-    
+
     const updatedItem: CartItem = {
       ...cartItem,
       modifications: allModifiers,
@@ -106,7 +105,7 @@ export default function CartItemEditor({
             Edit {product.name}
           </DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-6 touch-manipulation">
           {/* Current Item Info */}
           <div className="bg-gray-50 p-4 rounded-lg">
@@ -121,18 +120,18 @@ export default function CartItemEditor({
           {/* Size Selection */}
           {sizeOptions.length > 0 && (
             <div className="space-y-3">
-              <h4 className="font-medium text-lg sm:text-xl">Size</h4>
-              <div className="grid grid-cols-1 gap-3">
+              <h4 className="font-medium text-lg">Size</h4>
+              <div className="grid grid-cols-1 gap-2">
                 {sizeOptions.map((size) => (
                   <Button
                     key={size.id}
                     variant={selectedSize?.id === size.id ? "default" : "outline"}
-                    className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
+                    className="justify-between h-12 p-3 touch-manipulation"
                     onClick={() => setSelectedSize(size)}
                   >
                     <span className="font-medium">{size.name}</span>
                     <span className="font-semibold">
-                      {formatPrice(parseFloat(product.price) + size.price)}
+                      {size.price === 0 ? "No charge" : formatPrice(size.price)}
                     </span>
                   </Button>
                 ))}
@@ -140,70 +139,65 @@ export default function CartItemEditor({
             </div>
           )}
 
-          {/* Other Modifiers */}
+          {/* Other Modifications */}
           {otherModifiers.length > 0 && (
             <div className="space-y-3">
-              <h4 className="font-medium text-lg sm:text-xl">Modifications</h4>
-              <div className="grid grid-cols-1 gap-3">
-                {otherModifiers.map((modifier) => {
-                  const isSelected = selectedModifiers.some(m => m.id === modifier.id);
-                  return (
-                    <Button
-                      key={modifier.id}
-                      variant={isSelected ? "default" : "outline"}
-                      className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
-                      onClick={() => handleModifierToggle(modifier)}
-                    >
-                      <span className="font-medium">{modifier.name}</span>
-                      <span className="font-semibold">
-                        {modifier.price > 0 ? `+${formatPrice(modifier.price)}` : 'Free'}
-                      </span>
-                    </Button>
-                  );
-                })}
+              <h4 className="font-medium text-lg">Add-ons</h4>
+              <div className="grid grid-cols-1 gap-2">
+                {otherModifiers.map((modifier) => (
+                  <Button
+                    key={modifier.id}
+                    variant={selectedModifiers.find(m => m.id === modifier.id) ? "default" : "outline"}
+                    className="justify-between h-12 p-3 touch-manipulation"
+                    onClick={() => handleModifierToggle(modifier)}
+                  >
+                    <span className="font-medium">{modifier.name}</span>
+                    <span className="font-semibold">
+                      {modifier.price === 0 ? "No charge" : formatPrice(modifier.price)}
+                    </span>
+                  </Button>
+                ))}
               </div>
             </div>
           )}
 
           {/* Special Instructions */}
           <div className="space-y-3">
-            <h4 className="font-medium text-lg sm:text-xl">Special Instructions</h4>
+            <h4 className="font-medium text-lg">Special Instructions</h4>
             <textarea
-              className="w-full p-4 border rounded-md resize-none h-24 text-base touch-manipulation"
-              placeholder="Any special requests..."
               value={specialInstructions}
               onChange={(e) => setSpecialInstructions(e.target.value)}
+              placeholder="Any special requests..."
+              className="w-full h-20 p-3 border rounded-lg resize-none"
+              maxLength={200}
             />
           </div>
 
-          {/* Updated Total Price */}
-          <div className="border-t pt-4">
-            <div className="flex justify-between items-center text-xl font-bold">
-              <span>New Unit Price:</span>
-              <span>{formatPrice(calculateTotalPrice())}</span>
-            </div>
-            <div className="flex justify-between items-center text-lg text-gray-600 mt-1">
-              <span>Total for {cartItem.quantity}:</span>
-              <span>{formatPrice(calculateTotalPrice() * cartItem.quantity)}</span>
+          {/* Updated Price Display */}
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex justify-between items-center">
+              <span className="font-medium">Updated Price:</span>
+              <span className="font-bold text-lg">
+                {formatPrice(calculateTotalPrice())}
+              </span>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-4">
+            <Button
+              onClick={handleUpdate}
+              className="flex-1 h-12 text-base font-semibold"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Update Item
+            </Button>
             <Button
               onClick={handleRemove}
               variant="destructive"
-              className="flex-1 h-14 sm:h-12 text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
+              className="h-12 px-6"
             >
-              <Trash2 className="w-5 h-5 mr-2" />
-              Remove Item
-            </Button>
-            <Button
-              onClick={handleUpdate}
-              className="flex-1 h-14 sm:h-12 text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
-            >
-              <Settings className="w-5 h-5 mr-2" />
-              Update Item
+              <Trash2 className="w-4 h-4" />
             </Button>
           </div>
         </div>

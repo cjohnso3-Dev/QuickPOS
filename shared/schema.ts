@@ -161,6 +161,14 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true, creat
 export const insertTimeClockSchema = createInsertSchema(timeClocks).omit({ id: true, createdAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true });
+
+// Product modification type
+export type ProductModification = {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+};
 export const insertProductSizeSchema = createInsertSchema(productSizes).omit({ id: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: true });

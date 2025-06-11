@@ -560,7 +560,7 @@ export default function OrderingPage() {
                   ) : (
                     <div className="space-y-1">
                       {cart.map((item, index) => (
-                        <div key={`${item.product.id}-${index}`} className="border-b border-gray-100 p-3">
+                        <div key={`cart-${item.product.id}-${index}-${JSON.stringify(item.modifications)}`} className="border-b border-gray-100 p-3">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
                               <div className="flex items-center justify-between">
@@ -702,7 +702,7 @@ export default function OrderingPage() {
                   <div className="space-y-4">
                     {cart.map((item, index) => (
                       <CartItem
-                        key={`${item.product.id}-${index}`}
+                        key={`mobile-cart-${item.product.id}-${index}-${JSON.stringify(item.modifications)}`}
                         item={item}
                         onUpdateQuantity={updateCartQuantity}
                         onRemove={removeFromCart}

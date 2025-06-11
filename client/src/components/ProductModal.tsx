@@ -11,10 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { ProductWithCategory, Category } from "@shared/schema";
-import { X, Upload, Plus } from "lucide-react";
+import { X, Upload, Plus, Trash2 } from "lucide-react";
 
 interface ProductModalProps {
   open: boolean;
@@ -33,6 +36,14 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
     minStock: "5",
     maxStock: "100",
     imageUrl: "",
+    allowModifications: true,
+  });
+
+  const [modificationOptions, setModificationOptions] = useState<any[]>([]);
+  const [newModification, setNewModification] = useState({
+    name: "",
+    category: "",
+    price: "0"
   });
   const { toast } = useToast();
 
@@ -54,7 +65,9 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
         minStock: (product.minStock || 5).toString(),
         maxStock: (product.maxStock || 100).toString(),
         imageUrl: product.imageUrl || "",
+        allowModifications: product.allowModifications !== false,
       });
+      setModificationOptions((product.modificationOptions as any[]) || []);
     } else {
       setFormData({
         name: "",
@@ -66,7 +79,9 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
         minStock: "5",
         maxStock: "100",
         imageUrl: "",
+        allowModifications: true,
       });
+      setModificationOptions([]);
     }
   }, [product, open]);
 
@@ -139,6 +154,8 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
       minStock: parseInt(formData.minStock),
       maxStock: parseInt(formData.maxStock),
       imageUrl: formData.imageUrl,
+      allowModifications: formData.allowModifications,
+      modificationOptions: modificationOptions,
       isActive: true,
     };
 
@@ -149,8 +166,33 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
     }
   };
 
-  const handleInputChange = (field: string, value: string) => {
+  const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const addModification = () => {
+    if (!newModification.name.trim() || !newModification.category.trim()) {
+      toast({
+        title: "Invalid modification",
+        description: "Please enter both name and category for the modification.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const modification = {
+      id: `mod-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: newModification.name.trim(),
+      category: newModification.category.trim(),
+      price: parseFloat(newModification.price) || 0
+    };
+
+    setModificationOptions(prev => [...prev, modification]);
+    setNewModification({ name: "", category: "", price: "0" });
+  };
+
+  const removeModification = (id: string) => {
+    setModificationOptions(prev => prev.filter(mod => mod.id !== id));
   };
 
   const isLoading = createProductMutation.isPending || updateProductMutation.isPending;
@@ -272,6 +314,97 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
               Enter a URL for the product image, or leave empty for a placeholder
             </div>
           </div>
+
+          {/* Modifications Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Product Modifications</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="allowModifications"
+                  checked={formData.allowModifications}
+                  onChange={(e) => handleInputChange("allowModifications", e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="allowModifications">Allow modifications for this product</Label>
+              </div>
+
+              {formData.allowModifications && (
+                <>
+                  <Separator />
+                  
+                  {/* Add New Modification */}
+                  <div className="space-y-3">
+                    <h4 className="font-medium">Add Modification Option</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <Input
+                        placeholder="Name (e.g., Small, Large)"
+                        value={newModification.name}
+                        onChange={(e) => setNewModification(prev => ({ ...prev, name: e.target.value }))}
+                      />
+                      <Input
+                        placeholder="Category (e.g., size, milk)"
+                        value={newModification.category}
+                        onChange={(e) => setNewModification(prev => ({ ...prev, category: e.target.value }))}
+                      />
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="Price modifier"
+                        value={newModification.price}
+                        onChange={(e) => setNewModification(prev => ({ ...prev, price: e.target.value }))}
+                      />
+                      <Button onClick={addModification} size="sm">
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Existing Modifications */}
+                  {modificationOptions.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="font-medium">Current Modifications</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {modificationOptions.map((mod) => (
+                          <div key={mod.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <Badge variant="outline">{mod.category}</Badge>
+                              <span className="font-medium">{mod.name}</span>
+                              <span className="text-sm text-gray-600">
+                                {mod.price > 0 ? `+$${mod.price.toFixed(2)}` : mod.price < 0 ? `-$${Math.abs(mod.price).toFixed(2)}` : 'No charge'}
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeModification(mod.id)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-sm text-gray-500 bg-blue-50 p-3 rounded">
+                    <p><strong>Tips:</strong></p>
+                    <ul className="list-disc list-inside mt-1 space-y-1">
+                      <li>Use "size" category for Small, Medium, Large options</li>
+                      <li>Use "milk" category for milk alternatives</li>
+                      <li>Use positive prices for upgrades, negative for discounts</li>
+                      <li>Group related options under the same category</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="flex justify-end space-x-4 pt-6 border-t border-slate-200">
             <Button
