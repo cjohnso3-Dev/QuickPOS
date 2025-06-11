@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
 import { Plus, Settings } from "lucide-react";
 import type { ProductWithCategory, CartItem } from "@shared/schema";
 
@@ -307,11 +308,11 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
             {/* Special Instructions */}
             <div className="space-y-3">
               <h4 className="font-medium text-lg sm:text-xl">Special Instructions</h4>
-              <textarea
-                className="w-full p-4 border rounded-md resize-none h-24 text-base touch-manipulation"
-                placeholder="Any special requests..."
+              <VirtualKeyboard
                 value={specialInstructions}
-                onChange={(e) => setSpecialInstructions(e.target.value)}
+                onChange={setSpecialInstructions}
+                placeholder="Any special requests..."
+                maxLength={200}
               />
             </div>
 
