@@ -47,20 +47,20 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   deleteUser(id: number): Promise<boolean>;
-
+  
   // Time Clocks
   clockIn(userId: number): Promise<TimeClock>;
   clockOut(userId: number): Promise<TimeClock | undefined>;
   getCurrentTimeClock(userId: number): Promise<TimeClock | undefined>;
   getTodayHours(userId: number): Promise<number>;
   getTimeClocks(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClock[]>;
-
+  
   // Categories
   getCategories(): Promise<Category[]>;
   createCategory(category: InsertCategory): Promise<Category>;
   updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category | undefined>;
   deleteCategory(id: number): Promise<boolean>;
-
+  
   // Products
   getProducts(): Promise<ProductWithCategory[]>;
   getProduct(id: number): Promise<ProductWithCategory | undefined>;
@@ -68,47 +68,47 @@ export interface IStorage {
   updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product | undefined>;
   deleteProduct(id: number): Promise<boolean>;
   updateProductStock(id: number, stock: number): Promise<Product | undefined>;
-
+  
   // Orders
   getOrders(): Promise<OrderWithDetails[]>;
   getOrder(id: number): Promise<OrderWithDetails | undefined>;
   createOrder(order: InsertOrder): Promise<Order>;
   updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>;
   updateOrderStatus(id: number, status: string, managedBy?: number): Promise<Order | undefined>;
-
+  
   // Order Items
   createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem>;
   updateOrderItem(id: number, orderItem: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
   deleteOrderItem(id: number): Promise<boolean>;
   compOrderItem(id: number, compedBy: number, reason: string): Promise<OrderItem | undefined>;
   getOrderItems(orderId: number): Promise<(OrderItem & { product: Product })[]>;
-
+  
   // Payments
   createPayment(payment: InsertPayment): Promise<Payment>;
   getPayments(orderId: number): Promise<Payment[]>;
   processRefund(paymentId: number, amount: number, processedBy: number): Promise<Payment>;
-
+  
   // Discounts
   getDiscounts(): Promise<Discount[]>;
   createDiscount(discount: InsertDiscount): Promise<Discount>;
   updateDiscount(id: number, discount: Partial<InsertDiscount>): Promise<Discount | undefined>;
   deleteDiscount(id: number): Promise<boolean>;
-
+  
   // Tax Rates
   getTaxRates(): Promise<TaxRate[]>;
   getDefaultTaxRate(): Promise<TaxRate | undefined>;
   createTaxRate(taxRate: InsertTaxRate): Promise<TaxRate>;
   updateTaxRate(id: number, taxRate: Partial<InsertTaxRate>): Promise<TaxRate | undefined>;
-
+  
   // Audit Logs
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
   getAuditLogs(entityType?: string, entityId?: number): Promise<AuditLog[]>;
-
+  
   // Settings
   getSetting(key: string): Promise<Setting | undefined>;
   setSetting(key: string, value: string, category?: string, description?: string): Promise<Setting>;
   getSettings(category?: string): Promise<Setting[]>;
-
+  
   // Reports and Stats
   getTodayStats(): Promise<{
     todaySales: number;
@@ -118,7 +118,7 @@ export interface IStorage {
     todayTips: number;
     averageOrderValue: number;
   }>;
-
+  
   getSalesReport(startDate: Date, endDate: Date): Promise<any>;
   getEmployeeReport(userId?: number, startDate?: Date, endDate?: Date): Promise<any>;
 }
@@ -150,7 +150,7 @@ export class MemStorage implements IStorage {
     this.auditLogs = new Map();
     this.settingsMap = new Map();
     this.currentId = 1;
-
+    
     this.initializeDefaultData();
   }
 
@@ -210,7 +210,7 @@ export class MemStorage implements IStorage {
       { id: 3, name: "Services", description: "Professional services", sortOrder: 3, isActive: true },
       { id: 4, name: "Digital", description: "Digital products and services", sortOrder: 4, isActive: true }
     ];
-
+    
     defaultCategories.forEach(cat => {
       this.categories.set(cat.id, cat);
     });
@@ -272,27 +272,6 @@ export class MemStorage implements IStorage {
             { name: "Extra Bacon", price: 2.00 },
             { name: "Extra Cheese", price: 1.50 }
           ]}
-        ],
-        createdAt: new Date()
-      },
-      {
-        id: 2,
-        name: "Premium Coffee",
-        description: "Freshly brewed premium coffee",
-        price: "3.50", // base price for small
-        categoryId: 1,
-        sku: "COFFEE-001",
-        stock: 100,
-        isActive: true,
-        hasSizes: true,
-        allowModifications: true,
-        modificationOptions: [
-          { id: "small", name: "Small", category: "size", price: 3.50 },
-          { id: "medium", name: "Medium", category: "size", price: 4.25 },
-          { id: "large", name: "Large", category: "size", price: 4.95 },
-          { id: "extra_shot", name: "Extra Shot", category: "extras", price: 0.75 },
-          { id: "decaf", name: "Decaf", category: "extras", price: 0 },
-          { id: "oat_milk", name: "Oat Milk", category: "milk", price: 0.65 }
         ],
         createdAt: new Date()
       }
@@ -367,7 +346,7 @@ export class MemStorage implements IStorage {
   async getUsers(): Promise<UserWithTimeClock[]> {
     const usersArray = Array.from(this.users.values());
     const usersWithTimeClock: UserWithTimeClock[] = [];
-
+    
     for (const user of usersArray) {
       const currentTimeClock = await this.getCurrentTimeClock(user.id);
       const todayHours = await this.getTodayHours(user.id);
@@ -377,17 +356,17 @@ export class MemStorage implements IStorage {
         todayHours
       });
     }
-
+    
     return usersWithTimeClock;
   }
 
   async getUser(id: number): Promise<UserWithTimeClock | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-
+    
     const currentTimeClock = await this.getCurrentTimeClock(id);
     const todayHours = await this.getTodayHours(id);
-
+    
     return {
       ...user,
       currentTimeClock,
@@ -455,10 +434,10 @@ export class MemStorage implements IStorage {
 
     const now = new Date();
     const totalHours = (now.getTime() - currentClock.clockIn.getTime()) / (1000 * 60 * 60);
-
+    
     currentClock.clockOut = now;
     currentClock.totalHours = totalHours.toFixed(2);
-
+    
     this.timeClocks.set(currentClock.id, currentClock);
     return currentClock;
   }
@@ -546,7 +525,7 @@ export class MemStorage implements IStorage {
   async getProduct(id: number): Promise<ProductWithCategory | undefined> {
     const product = this.products.get(id);
     if (!product) return undefined;
-
+    
     return {
       ...product,
       category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
@@ -608,7 +587,7 @@ export class MemStorage implements IStorage {
       const payments = await this.getPayments(order.id);
       const createdByUser = order.createdBy ? this.users.get(order.createdBy) : undefined;
       const managedByUser = order.managedBy ? this.users.get(order.managedBy) : undefined;
-
+      
       ordersWithDetails.push({ 
         ...order, 
         items, 
@@ -631,7 +610,7 @@ export class MemStorage implements IStorage {
     const payments = await this.getPayments(id);
     const createdByUser = order.createdBy ? this.users.get(order.createdBy) : undefined;
     const managedByUser = order.managedBy ? this.users.get(order.managedBy) : undefined;
-
+    
     return { 
       ...order, 
       items, 
@@ -686,7 +665,7 @@ export class MemStorage implements IStorage {
     if (managedBy) {
       order.managedBy = managedBy;
     }
-
+    
     this.orders.set(id, order);
     return order;
   }
@@ -731,7 +710,7 @@ export class MemStorage implements IStorage {
     item.isComped = true;
     item.compedBy = compedBy;
     item.compReason = reason;
-
+    
     this.orderItems.set(id, item);
     return item;
   }
@@ -739,7 +718,7 @@ export class MemStorage implements IStorage {
   async getOrderItems(orderId: number): Promise<(OrderItem & { product: Product })[]> {
     const items = Array.from(this.orderItems.values())
       .filter(item => item.orderId === orderId);
-
+    
     return items.map(item => ({
       ...item,
       product: this.products.get(item.productId)!
@@ -773,7 +752,7 @@ export class MemStorage implements IStorage {
   async processRefund(paymentId: number, amount: number, processedBy: number): Promise<Payment> {
     const id = this.currentId++;
     const originalPayment = this.payments.get(paymentId);
-
+    
     const refundPayment: Payment = {
       id,
       orderId: originalPayment?.orderId || 0,
@@ -786,7 +765,7 @@ export class MemStorage implements IStorage {
       processedBy,
       createdAt: new Date()
     };
-
+    
     this.payments.set(id, refundPayment);
     return refundPayment;
   }
@@ -878,15 +857,15 @@ export class MemStorage implements IStorage {
 
   async getAuditLogs(entityType?: string, entityId?: number): Promise<AuditLog[]> {
     let logs = Array.from(this.auditLogs.values());
-
+    
     if (entityType) {
       logs = logs.filter(log => log.entityType === entityType);
     }
-
+    
     if (entityId) {
       logs = logs.filter(log => log.entityId === entityId);
     }
-
+    
     return logs.sort((a, b) => (b.createdAt || new Date()).getTime() - (a.createdAt || new Date()).getTime());
   }
 
@@ -992,21 +971,21 @@ export class MemStorage implements IStorage {
 
   async getEmployeeReport(userId?: number, startDate?: Date, endDate?: Date): Promise<any> {
     let timeClocks = Array.from(this.timeClocks.values());
-
+    
     if (userId) {
       timeClocks = timeClocks.filter(tc => tc.userId === userId);
     }
-
+    
     if (startDate) {
       timeClocks = timeClocks.filter(tc => tc.date >= startDate);
     }
-
+    
     if (endDate) {
       timeClocks = timeClocks.filter(tc => tc.date <= endDate);
     }
 
     const totalHours = timeClocks.reduce((sum, tc) => sum + parseFloat(tc.totalHours || "0"), 0);
-
+    
     return {
       userId,
       period: { startDate, endDate },

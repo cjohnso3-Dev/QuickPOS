@@ -28,7 +28,6 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
   const modificationOptions = (product.modificationOptions as ProductModifier[]) || [];
   const sizeOptions = modificationOptions.filter(mod => mod.category === 'size');
   const otherModifiers = modificationOptions.filter(mod => mod.category !== 'size');
-  const hasSizes = product.hasSizes;
 
   const handleQuickAdd = () => {
     onQuickAdd(product);
@@ -63,7 +62,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
   const handleAddToOrder = () => {
     const finalPrice = calculateTotalPrice();
     const allModifiers = selectedSize ? [selectedSize, ...selectedModifiers] : selectedModifiers;
-
+    
     const cartItem: CartItem = {
       product,
       quantity: 1,
@@ -111,7 +110,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                   {formatPrice(parseFloat(product.price))}
                 </Badge>
               </div>
-
+              
               {product.description && (
                 <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{product.description}</p>
               )}
@@ -155,7 +154,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                 </span>
                 {product.itemType === "service" ? "Service" : "Add"}
               </Button>
-
+              
               {(product.allowModifications && modificationOptions.length > 0) && (
                 <Button
                   onClick={handleCustomizeClick}
@@ -178,28 +177,29 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
           <DialogHeader>
             <DialogTitle className="text-xl sm:text-2xl">Customize {product.name}</DialogTitle>
           </DialogHeader>
-
+          
           <div className="space-y-6 touch-manipulation">
-            {hasSizes && sizeOptions.length > 0 && (
-                <div>
-                  <h4 className="font-medium text-lg sm:text-xl">Size</h4>
-                  <div className="grid grid-cols-1 gap-3">
-                    {sizeOptions.map((size) => (
-                      <Button
-                        key={size.id}
-                        variant={selectedSize?.id === size.id ? "default" : "outline"}
-                        className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
-                        onClick={() => setSelectedSize(size)}
-                      >
-                        <span className="font-medium">{size.name}</span>
-                        <span className="font-semibold">
-                          {size.price > 0 ? `+${formatPrice(size.price)}` : 'Base'}
-                        </span>
-                      </Button>
-                    ))}
-                  </div>
+            {/* Size Selection */}
+            {sizeOptions.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="font-medium text-lg sm:text-xl">Size</h4>
+                <div className="grid grid-cols-1 gap-3">
+                  {sizeOptions.map((size) => (
+                    <Button
+                      key={size.id}
+                      variant={selectedSize?.id === size.id ? "default" : "outline"}
+                      className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
+                      onClick={() => setSelectedSize(size)}
+                    >
+                      <span className="font-medium">{size.name}</span>
+                      <span className="font-semibold">
+                        {size.price > 0 ? `+${formatPrice(size.price)}` : 'Base'}
+                      </span>
+                    </Button>
+                  ))}
                 </div>
-              )}
+              </div>
+            )}
 
             {/* Other Modifiers */}
             {otherModifiers.length > 0 && (
