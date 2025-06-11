@@ -115,11 +115,29 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                 <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{product.description}</p>
               )}
 
-              {/* Stock Status */}
-              {product.stock <= (product.minStock || 5) && (
-                <Badge variant="destructive" className="text-xs">
-                  Low Stock ({product.stock} left)
-                </Badge>
+              {/* Stock Status or Service Info */}
+              {product.itemType === "service" ? (
+                <div className="flex gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    Service
+                  </Badge>
+                  {product.serviceDetails?.duration && (
+                    <Badge variant="secondary" className="text-xs">
+                      {product.serviceDetails.duration} min
+                    </Badge>
+                  )}
+                  {product.serviceDetails?.appointmentRequired && (
+                    <Badge variant="outline" className="text-xs">
+                      Appointment Required
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                product.requiresInventory && product.stock <= (product.minStock || 5) && (
+                  <Badge variant="destructive" className="text-xs">
+                    Low Stock ({product.stock} left)
+                  </Badge>
+                )
               )}
             </div>
 
@@ -128,10 +146,13 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
               <Button
                 onClick={handleQuickAdd}
                 className="flex-1 h-14 sm:h-12 text-base sm:text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
-                disabled={product.stock === 0}
+                disabled={product.requiresInventory && product.stock === 0}
               >
                 <Plus className="w-5 h-5 mr-2" />
-                <span className="hidden xs:inline">Quick </span>Add
+                <span className="hidden xs:inline">
+                  {product.itemType === "service" ? "Book " : "Quick "}
+                </span>
+                {product.itemType === "service" ? "Service" : "Add"}
               </Button>
               
               {(product.allowModifications && modificationOptions.length > 0) && (

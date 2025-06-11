@@ -207,7 +207,8 @@ export class MemStorage implements IStorage {
     const defaultCategories: Category[] = [
       { id: 1, name: "Beverages", description: "Hot and cold beverages", sortOrder: 1, isActive: true },
       { id: 2, name: "Food", description: "Main food items", sortOrder: 2, isActive: true },
-      { id: 3, name: "Desserts", description: "Sweet treats and desserts", sortOrder: 3, isActive: true }
+      { id: 3, name: "Services", description: "Professional services", sortOrder: 3, isActive: true },
+      { id: 4, name: "Digital", description: "Digital products and services", sortOrder: 4, isActive: true }
     ];
     
     defaultCategories.forEach(cat => {
