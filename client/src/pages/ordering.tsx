@@ -871,8 +871,7 @@ export default function OrderingPage() {
                           </div>
                         </div>
                         <Percent className="w-4 h-4" />
-                      </```python
-                      Button>
+                      </Button>
                     ))}
                   </div>
                 </div>
