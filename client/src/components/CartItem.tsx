@@ -1,19 +1,21 @@
 import { Button } from "@/components/ui/button";
-import type { CartItem } from "@shared/schema";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus, X, Edit } from "lucide-react";
+import type { CartItem as CartItemType } from "@shared/schema";
 
 interface CartItemProps {
-  item: CartItem;
-  onUpdateQuantity: (productId: number, quantity: number) => void;
+  item: CartItemType;
+  onUpdateQuantity: (product: CartItemType['product'], newQuantity: number) => void;
+  onRemove: (product: CartItemType['product']) => void;
+  onEdit?: (item: CartItemType) => void;
 }
 
-export default function CartItem({ item, onUpdateQuantity }: CartItemProps) {
+export default function CartItem({ item, onUpdateQuantity, onRemove, onEdit }: CartItemProps) {
   const decreaseQuantity = () => {
-    onUpdateQuantity(item.product.id, item.quantity - 1);
+    onUpdateQuantity(item.product, item.quantity - 1);
   };
 
   const increaseQuantity = () => {
-    onUpdateQuantity(item.product.id, item.quantity + 1);
+    onUpdateQuantity(item.product, item.quantity + 1);
   };
 
   return (
@@ -26,19 +28,36 @@ export default function CartItem({ item, onUpdateQuantity }: CartItemProps) {
         <Button
           variant="outline"
           size="sm"
-          className="w-6 h-6 p-0"
-          onClick={decreaseQuantity}
+          onClick={() => onUpdateQuantity(item.product, item.quantity - 1)}
+          disabled={item.quantity <= 1}
         >
-          <Minus className="w-3 h-3" />
+          <Minus className="h-4 w-4" />
         </Button>
-        <span className="text-sm font-medium w-6 text-center">{item.quantity}</span>
+        <span className="w-8 text-center">{item.quantity}</span>
         <Button
           variant="outline"
           size="sm"
-          className="w-6 h-6 p-0"
-          onClick={increaseQuantity}
+          onClick={() => onUpdateQuantity(item.product, item.quantity + 1)}
         >
-          <Plus className="w-3 h-3" />
+          <Plus className="h-4 w-4" />
+        </Button>
+        {onEdit && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onEdit(item)}
+            className="text-blue-600 hover:text-blue-700"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onRemove(item.product)}
+          className="text-red-600 hover:text-red-700"
+        >
+          <X className="h-4 w-4" />
         </Button>
       </div>
     </div>

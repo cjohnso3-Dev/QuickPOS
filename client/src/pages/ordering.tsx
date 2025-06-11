@@ -1,15 +1,21 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { queryClient } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Receipt, CreditCard, DollarSign, Trash2 } from "lucide-react";
 import QuickOrderCard from "@/components/QuickOrderCard";
-import { ShoppingCart, Trash2, CreditCard, User } from "lucide-react";
-import type { ProductWithCategory, CartItem as CartItemType, Category } from "@shared/schema";
+import CartItem from "@/components/CartItem";
+import CartItemEditor from "@/components/CartItemEditor";
+import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
+import type { ProductWithCategory, Category, CartItem as CartItemType, TipOption, PaymentSplit } from "@shared/schema";
 
 export default function OrderingPage() {
   const [cart, setCart] = useState<CartItemType[]>([]);
@@ -52,7 +58,17 @@ export default function OrderingPage() {
     },
   });
 
-  
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [showCartEditor, setShowCartEditor] = useState(false);
+  const [editingCartItem, setEditingCartItem] = useState<CartItemType | null>(null);
+  const [tipAmount, setTipAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'split'>('cash');
+  const [cashReceived, setCashReceived] = useState("");
+  const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
+  const [splitAmount1, setSplitAmount1] = useState("");
+  const [splitAmount2, setSplitAmount2] = useState("");
+  const printReceiptRef = useRef<() => void>();
+
 
   const updateCartQuantity = (productId: number, quantity: number) => {
     if (quantity === 0) {
@@ -121,7 +137,7 @@ export default function OrderingPage() {
     : products;
 
   const activeProducts = filteredProducts.filter(product => product.isActive && product.stock > 0);
-  
+
   const handleQuickAdd = (product: ProductWithCategory) => {
     const cartItem: CartItemType = {
       product,
@@ -181,6 +197,25 @@ export default function OrderingPage() {
       title: "Added to cart",
       description: `Customized ${cartItem.product.name} has been added to your cart.`,
     });
+  };
+
+  const removeFromCart = (product: ProductWithCategory) => {
+    setCart(prev => prev.filter(item => item.product.id !== product.id));
+  };
+
+  const handleEditCartItem = (item: CartItemType) => {
+    setEditingCartItem(item);
+    setShowCartEditor(true);
+  };
+
+  const handleUpdateCartItem = (updatedItem: CartItemType) => {
+    setCart(prev => prev.map(item => 
+      item.product.id === updatedItem.product.id ? updatedItem : item
+    ));
+  };
+
+  const handleRemoveCartItem = (itemToRemove: CartItemType) => {
+    setCart(prev => prev.filter(item => item.product.id !== itemToRemove.product.id));
   };
 
 
@@ -290,71 +325,15 @@ export default function OrderingPage() {
                     <p className="text-sm">Tap items to add</p>
                   </div>
                 ) : (
-                  cart.map((item, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h4 className="font-medium text-gray-900">{item.product.name}</h4>
-                          <div className="text-sm text-gray-600">
-                            {formatCurrency(item.unitPrice)} each
-                          </div>
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => removeCartItem(index)}
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 touch-manipulation"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-
-                      {/* Modifications */}
-                      {item.modifications && item.modifications.length > 0 && (
-                        <div className="text-xs space-y-1 pl-2 border-l-2 border-blue-200">
-                          {item.modifications.map((mod: any, modIndex) => (
-                            <div key={modIndex} className="flex justify-between text-gray-600">
-                              <span>+ {mod.name}</span>
-                              {mod.price > 0 && <span>{formatCurrency(mod.price)}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Special Instructions */}
-                      {item.specialInstructions && (
-                        <div className="text-xs text-gray-600 italic bg-yellow-50 p-2 rounded">
-                          Note: {item.specialInstructions}
-                        </div>
-                      )}
-
-                      {/* Quantity Controls */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
-                            className="h-8 w-8 p-0 touch-manipulation"
-                          >
-                            -
-                          </Button>
-                          <span className="w-8 text-center font-medium">{item.quantity}</span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
-                            className="h-8 w-8 p-0 touch-manipulation"
-                          >
-                            +
-                          </Button>
-                        </div>
-                        <div className="font-semibold text-blue-600">
-                          {formatCurrency(item.totalPrice)}
-                        </div>
-                      </div>
-                    </div>
-                  ))
+                  cart.map((item) => (
+                      <CartItem
+                        key={item.product.id}
+                        item={item}
+                        onUpdateQuantity={updateCartQuantity}
+                        onRemove={removeFromCart}
+                        onEdit={handleEditCartItem}
+                      />
+                    ))
                 )}
               </div>
 
@@ -402,6 +381,17 @@ export default function OrderingPage() {
           </div>
         </div>
       </div>
+
+      {/* Cart Item Editor Modal */}
+      <CartItemEditor
+        open={showCartEditor}
+        onOpenChange={setShowCartEditor}
+        cartItem={editingCartItem}
+        onUpdate={handleUpdateCartItem}
+        onRemove={handleRemoveCartItem}
+      />
+
+      {/* Checkout Modal */}
     </div>
   );
 }

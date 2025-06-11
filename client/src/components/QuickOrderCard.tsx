@@ -157,25 +157,42 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
               )}
             </div>
 
-            {/* Size Selection (if product has sizes) */}
+            {/* Size Selection with Split Buttons (if product has sizes) */}
             {sizeOptions.length > 0 && (
               <div className="space-y-2 pt-2">
                 <h4 className="text-sm font-medium text-gray-700">Size:</h4>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2">
                   {sizeOptions.map((size) => (
-                    <Button
-                      key={size.id}
-                      onClick={() => handleQuickAdd(size)}
-                      className="h-12 text-sm font-semibold touch-manipulation active:scale-95 transition-transform"
-                      disabled={product.requiresInventory && product.stock === 0}
-                    >
-                      <div className="flex flex-col">
-                        <span>{size.name}</span>
-                        <span className="text-xs opacity-75">
-                          {formatPrice(parseFloat(product.price) + size.price)}
-                        </span>
-                      </div>
-                    </Button>
+                    <div key={size.id} className="flex rounded-md overflow-hidden border border-gray-300">
+                      {/* Quick Add Section (75% width) */}
+                      <Button
+                        onClick={() => handleQuickAdd(size)}
+                        className="flex-1 h-12 text-sm font-semibold touch-manipulation active:scale-95 transition-transform rounded-none border-0"
+                        disabled={product.requiresInventory && product.stock === 0}
+                      >
+                        <div className="flex flex-col">
+                          <span>{size.name}</span>
+                          <span className="text-xs opacity-75">
+                            {formatPrice(parseFloat(product.price) + size.price)}
+                          </span>
+                        </div>
+                      </Button>
+                      
+                      {/* Customize Section (25% width) */}
+                      {otherModifiers.length > 0 && (
+                        <Button
+                          onClick={() => {
+                            setSelectedSize(size);
+                            handleCustomizeClick();
+                          }}
+                          variant="outline"
+                          className="w-12 h-12 p-0 touch-manipulation active:scale-95 transition-transform rounded-none border-0 border-l border-gray-300"
+                          disabled={product.stock === 0}
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
