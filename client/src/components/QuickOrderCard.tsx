@@ -104,53 +104,56 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
       <Card className="group hover:shadow-lg transition-all duration-200 border-2 hover:border-blue-200 touch-manipulation">
         <CardContent className="p-3 sm:p-4">
           <div className="space-y-3">
-            {/* Product Image */}
+            {/* Product Image with Overlaid Badges */}
             {product.imageUrl && (
-              <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+              <div className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
                 <img
                   src={product.imageUrl}
                   alt={product.name}
                   className="w-full h-full object-cover"
                 />
+                
+                {/* Overlaid Badges */}
+                <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                  {/* Price Badge */}
+                  <Badge variant="secondary" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
+                    {formatPrice(parseFloat(product.price))}
+                  </Badge>
+                  
+                  {/* Service/Stock Status Badges */}
+                  {product.itemType === "service" ? (
+                    <>
+                      <Badge variant="outline" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
+                        Service
+                      </Badge>
+                      {product.serviceDetails?.duration && (
+                        <Badge variant="secondary" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
+                          {product.serviceDetails.duration}m
+                        </Badge>
+                      )}
+                      {product.serviceDetails?.appointmentRequired && (
+                        <Badge variant="outline" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
+                          Appt Req'd
+                        </Badge>
+                      )}
+                    </>
+                  ) : (
+                    product.requiresInventory && product.stock <= (product.minStock || 5) && (
+                      <Badge variant="destructive" className="text-xs shadow-md bg-red-500/90 backdrop-blur-sm text-white">
+                        Low Stock
+                      </Badge>
+                    )
+                  )}
+                </div>
               </div>
             )}
 
             {/* Product Info */}
             <div className="space-y-2">
-              <div className="flex items-start justify-between">
-                <h3 className="font-semibold text-base sm:text-lg leading-tight">{product.name}</h3>
-                <Badge variant="secondary" className="ml-2 text-sm">
-                  {formatPrice(parseFloat(product.price))}
-                </Badge>
-              </div>
+              <h3 className="font-semibold text-base sm:text-lg leading-tight">{product.name}</h3>
               
               {product.description && (
                 <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{product.description}</p>
-              )}
-
-              {/* Stock Status or Service Info */}
-              {product.itemType === "service" ? (
-                <div className="flex gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    Service
-                  </Badge>
-                  {product.serviceDetails?.duration && (
-                    <Badge variant="secondary" className="text-xs">
-                      {product.serviceDetails.duration} min
-                    </Badge>
-                  )}
-                  {product.serviceDetails?.appointmentRequired && (
-                    <Badge variant="outline" className="text-xs">
-                      Appointment Required
-                    </Badge>
-                  )}
-                </div>
-              ) : (
-                product.requiresInventory && product.stock <= (product.minStock || 5) && (
-                  <Badge variant="destructive" className="text-xs">
-                    Low Stock ({product.stock} left)
-                  </Badge>
-                )
               )}
             </div>
 
