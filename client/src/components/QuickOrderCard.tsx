@@ -102,110 +102,129 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
 
   return (
     <>
-      <Card className={`relative overflow-hidden transition-all duration-200 hover:shadow-md ${
-        isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
-      }`}>
-        <CardContent className="p-0">
-          {/* Product Image */}
-          <div className="relative aspect-square bg-gray-100">
-            <img
-              src={product.imageUrl || "https://via.placeholder.com/200x200?text=No+Image"}
-              alt={product.name}
-              className="w-full h-full object-cover"
-            />
-            
-            {/* Price Badge */}
-            <div className="absolute top-2 left-2">
-              <Badge 
-                className="bg-green-600 text-white font-semibold px-2 py-1 text-sm"
-              >
-                {formatCurrency(parseFloat(product.price))}
-              </Badge>
-            </div>
-
-            {/* Stock Status */}
-            {isOutOfStock && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <Badge variant="destructive" className="text-white font-medium">
-                  Out of Stock
+      <Card className={`relative overflow-hidden transition-all duration-200 ${
+        isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:scale-[1.02]'
+      } h-32 sm:h-36`}>
+        <CardContent className="p-0 h-full">
+          <div className="flex h-full">
+            {/* Product Image - Left Side */}
+            <div className="relative w-24 sm:w-32 flex-shrink-0">
+              <img
+                src={product.imageUrl || "https://via.placeholder.com/120x120?text=No+Image"}
+                alt={product.name}
+                className="w-full h-full object-cover"
+              />
+              
+              {/* Price Badge */}
+              <div className="absolute top-1 left-1">
+                <Badge className="bg-green-600 text-white font-bold text-xs px-1.5 py-0.5">
+                  {formatCurrency(parseFloat(product.price))}
                 </Badge>
               </div>
-            )}
-            
-            {isLowStock && (
-              <div className="absolute top-2 right-2">
-                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                  Low Stock
-                </Badge>
-              </div>
-            )}
-          </div>
 
-          {/* Product Info */}
-          <div className="p-3">
-            <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">
-              {product.name}
-            </h3>
-            <p className="text-sm text-gray-600 mb-3 line-clamp-2 min-h-[2.5rem]">
-              {product.description || "No description available"}
-            </p>
-
-            {/* Size Options for Quick Add */}
-            {sizeOptions.length > 0 && !isOutOfStock && (
-              <div className="mb-3">
-                <p className="text-xs font-medium text-gray-700 mb-2">Size:</p>
-                <div className="grid grid-cols-1 gap-1">
-                  {sizeOptions.slice(0, 3).map((size) => (
-                    <Button
-                      key={size.id}
-                      onClick={() => handleQuickAdd(size)}
-                      variant="outline"
-                      size="sm"
-                      className="justify-between h-8 px-2 text-xs font-medium hover:bg-blue-50 hover:border-blue-300"
-                    >
-                      <span>{size.name}</span>
-                      <span className="text-blue-600 font-semibold">
-                        {formatCurrency(parseFloat(product.price) + size.price)}
-                      </span>
-                    </Button>
-                  ))}
+              {/* Stock Status Overlay */}
+              {isOutOfStock && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                  <Badge variant="destructive" className="text-white font-medium text-xs">
+                    Out
+                  </Badge>
                 </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-2">
-              {!isOutOfStock && (
-                <>
-                  {sizeOptions.length === 0 ? (
-                    <Button
-                      onClick={() => onQuickAdd(product)}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-9"
-                      size="sm"
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add
-                    </Button>
-                  ) : null}
-                  
-                  {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
-                    <Button
-                      onClick={handleCustomizeClick}
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 h-9 hover:bg-gray-50"
-                    >
-                      <Settings className="w-4 h-4 mr-1" />
-                      Modify
-                    </Button>
-                  )}
-                </>
+              )}
+              
+              {isLowStock && (
+                <div className="absolute top-1 right-1">
+                  <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300 text-xs px-1 py-0.5">
+                    Low
+                  </Badge>
+                </div>
               )}
             </div>
 
-            {/* Stock Info */}
-            <div className="mt-2 text-xs text-gray-500 text-center">
-              {product.stock} {product.stock === 1 ? 'item' : 'items'} available
+            {/* Product Info - Right Side */}
+            <div className="flex-1 p-2 sm:p-3 flex flex-col justify-between min-w-0">
+              {/* Product Details */}
+              <div className="flex-1 min-h-0">
+                <h3 className="font-semibold text-gray-900 text-sm sm:text-base leading-tight mb-1 line-clamp-2">
+                  {product.name}
+                </h3>
+                <p className="text-xs text-gray-600 line-clamp-2 mb-2">
+                  {product.description || "No description"}
+                </p>
+                
+                {/* Stock Info */}
+                <p className="text-xs text-gray-500">
+                  {product.stock} available
+                </p>
+              </div>
+
+              {/* Quick Size Selection */}
+              {sizeOptions.length > 0 && !isOutOfStock && (
+                <div className="mb-2">
+                  <div className="flex flex-wrap gap-1">
+                    {sizeOptions.slice(0, 2).map((size) => (
+                      <Button
+                        key={size.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickAdd(size);
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs font-medium hover:bg-blue-50 hover:border-blue-300 flex-1 min-w-0"
+                      >
+                        <span className="truncate">{size.name}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-1.5">
+                {!isOutOfStock && (
+                  <>
+                    {sizeOptions.length === 0 ? (
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onQuickAdd(product);
+                        }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs font-semibold"
+                        size="sm"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Add
+                      </Button>
+                    ) : (
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickAdd(sizeOptions[0]);
+                        }}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs font-semibold"
+                        size="sm"
+                      >
+                        <Plus className="w-3 h-3 mr-1" />
+                        Quick
+                      </Button>
+                    )}
+                    
+                    {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCustomizeClick();
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="flex-shrink-0 h-8 px-2 hover:bg-gray-50"
+                      >
+                        <Settings className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </CardContent>

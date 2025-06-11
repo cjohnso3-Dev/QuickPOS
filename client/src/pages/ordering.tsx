@@ -486,13 +486,13 @@ export default function OrderingPage() {
             {/* Products Grid */}
             <div className="flex-1 p-4 overflow-y-auto">
               {productsLoading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                  {[...Array(10)].map((_, i) => (
-                    <div key={i} className="aspect-square bg-gray-200 rounded-lg animate-pulse" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="h-32 sm:h-36 bg-gray-200 rounded-lg animate-pulse" />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {activeProducts.map((product) => (
                     <QuickOrderCard
                       key={product.id}
