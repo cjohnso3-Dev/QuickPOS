@@ -1,10 +1,11 @@
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
-import { Plus, Settings } from "lucide-react";
+import { Plus, Settings, ShoppingCart } from "lucide-react";
 import type { ProductWithCategory, CartItem } from "@shared/schema";
 
 interface QuickOrderCardProps {
@@ -30,6 +31,13 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
   const sizeOptions = modificationOptions.filter(mod => mod.category === 'size');
   const otherModifiers = modificationOptions.filter(mod => mod.category !== 'size');
 
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
+
   const handleQuickAdd = (sizeOverride?: ProductModifier) => {
     const basePrice = parseFloat(product.price);
     const sizePrice = sizeOverride ? sizeOverride.price : 0;
@@ -48,39 +56,27 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
   };
 
   const handleCustomizeClick = () => {
-    // Set default size if product has sizes
     if (sizeOptions.length > 0 && !selectedSize) {
       setSelectedSize(sizeOptions[0]);
     }
     setShowModifiers(true);
   };
 
-  const handleModifierToggle = (modifier: ProductModifier) => {
-    setSelectedModifiers(prev => {
-      const exists = prev.find(m => m.id === modifier.id);
-      if (exists) {
-        return prev.filter(m => m.id !== modifier.id);
-      } else {
-        return [...prev, modifier];
-      }
-    });
-  };
-
-  const calculateTotalPrice = () => {
+  const handleAddWithModifications = () => {
     const basePrice = parseFloat(product.price);
-    const sizePrice = selectedSize?.price || 0;
-    const modifierPrice = selectedModifiers.reduce((sum, mod) => sum + mod.price, 0);
-    return basePrice + sizePrice + modifierPrice;
-  };
+    const sizePrice = selectedSize ? selectedSize.price : 0;
+    const modifiersPrice = selectedModifiers.reduce((sum, mod) => sum + mod.price, 0);
+    const finalPrice = basePrice + sizePrice + modifiersPrice;
 
-  const handleAddToOrder = () => {
-    const finalPrice = calculateTotalPrice();
-    const allModifiers = selectedSize ? [selectedSize, ...selectedModifiers] : selectedModifiers;
-    
+    const modifications = [
+      ...(selectedSize ? [selectedSize] : []),
+      ...selectedModifiers
+    ];
+
     const cartItem: CartItem = {
       product,
       quantity: 1,
-      modifications: allModifiers,
+      modifications,
       specialInstructions: specialInstructions || undefined,
       unitPrice: finalPrice,
       totalPrice: finalPrice
@@ -89,174 +85,87 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
     onCustomAdd(cartItem);
     setShowModifiers(false);
     setSelectedModifiers([]);
-    setSelectedSize(null);
+    setSelectedSize(sizeOptions.length > 0 ? sizeOptions[0] : null);
     setSpecialInstructions("");
   };
 
-  const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(price);
+  const toggleModifier = (modifier: ProductModifier) => {
+    setSelectedModifiers(prev =>
+      prev.find(m => m.id === modifier.id)
+        ? prev.filter(m => m.id !== modifier.id)
+        : [...prev, modifier]
+    );
   };
+
+  const isOutOfStock = product.stock <= 0;
+  const isLowStock = product.stock <= (product.minStock || 5) && product.stock > 0;
 
   return (
     <>
-      <Card className="group hover:shadow-lg transition-all duration-200 border-2 hover:border-blue-200 touch-manipulation h-full">
-        <CardContent className="p-3 h-full flex flex-col">
-          <div className="space-y-3 flex-1">
-            {/* Product Image with Overlaid Badges */}
-            {product.imageUrl && (
-              <div className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
-                <img
-                  src={product.imageUrl}
-                  alt={product.name}
-                  className="w-full h-full object-cover"
-                />
-                
-                {/* Overlaid Badges */}
-                <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
-                  {/* Price Badge */}
-                  <Badge variant="default" className="text-xs shadow-lg bg-green-600/95 text-white font-semibold backdrop-blur-sm border-0">
-                    {formatPrice(parseFloat(product.price))}
-                  </Badge>
-                  
-                  {/* Service/Stock Status Badges */}
-                  {product.itemType === "service" ? (
-                    <>
-                      <Badge variant="outline" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
-                        Service
-                      </Badge>
-                      {product.serviceDetails?.duration && (
-                        <Badge variant="secondary" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
-                          {product.serviceDetails.duration}m
-                        </Badge>
-                      )}
-                      {product.serviceDetails?.appointmentRequired && (
-                        <Badge variant="outline" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
-                          Appt Req'd
-                        </Badge>
-                      )}
-                    </>
-                  ) : (
-                    product.requiresInventory && product.stock <= (product.minStock || 5) && (
-                      <Badge variant="destructive" className="text-xs shadow-md bg-red-500/90 backdrop-blur-sm text-white">
-                        Low Stock
-                      </Badge>
-                    )
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Product Info */}
-            <div className="space-y-2">
-              <h3 className="font-semibold text-base sm:text-lg leading-tight">{product.name}</h3>
-              
-              {product.description && (
-                <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{product.description}</p>
-              )}
+      <Card className={`relative overflow-hidden transition-all duration-200 hover:shadow-md ${
+        isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
+      }`}>
+        <CardContent className="p-0">
+          {/* Product Image */}
+          <div className="relative aspect-square bg-gray-100">
+            <img
+              src={product.imageUrl || "https://via.placeholder.com/200x200?text=No+Image"}
+              alt={product.name}
+              className="w-full h-full object-cover"
+            />
+            
+            {/* Price Badge */}
+            <div className="absolute top-2 left-2">
+              <Badge 
+                className="bg-green-600 text-white font-semibold px-2 py-1 text-sm"
+              >
+                {formatCurrency(parseFloat(product.price))}
+              </Badge>
             </div>
 
-            {/* Size Selection with Split Buttons (if product has sizes) */}
-            {sizeOptions.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <h4 className="text-sm font-medium text-gray-700">Size:</h4>
-                <div className="grid grid-cols-1 gap-2">
-                  {sizeOptions.map((size) => (
-                    <div key={size.id} className="flex rounded-md overflow-hidden border border-gray-300">
-                      {/* Quick Add Section (75% width) */}
-                      <Button
-                        onClick={() => handleQuickAdd(size)}
-                        className="flex-1 h-12 text-sm font-semibold touch-manipulation active:scale-95 transition-transform rounded-none border-0"
-                        disabled={product.requiresInventory && product.stock === 0}
-                      >
-                        <div className="flex flex-col">
-                          <span>{size.name}</span>
-                          <span className="text-xs opacity-75">
-                            {formatPrice(parseFloat(product.price) + size.price)}
-                          </span>
-                        </div>
-                      </Button>
-                      
-                      {/* Customize Section (25% width) */}
-                      {otherModifiers.length > 0 && (
-                        <Button
-                          onClick={() => {
-                            setSelectedSize(size);
-                            setShowModifiers(true);
-                          }}
-                          variant="outline"
-                          className="w-12 h-12 p-0 touch-manipulation active:scale-95 transition-transform rounded-none border-0 border-l border-gray-300"
-                          disabled={product.stock === 0}
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            {/* Stock Status */}
+            {isOutOfStock && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <Badge variant="destructive" className="text-white font-medium">
+                  Out of Stock
+                </Badge>
               </div>
             )}
-
-            {/* Action Buttons - Touch Optimized */}
-            <div className="flex gap-2 pt-2 mt-auto">
-              {sizeOptions.length === 0 && (
-                <Button
-                  onClick={() => handleQuickAdd()}
-                  className="flex-1 h-12 text-sm font-semibold touch-manipulation active:scale-95 transition-transform"
-                  disabled={product.requiresInventory && product.stock === 0}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  <span className="truncate">
-                    {product.itemType === "service" ? "Book" : "Add"}
-                  </span>
-                </Button>
-              )}
-              
-              {(product.allowModifications && otherModifiers.length > 0) && (
-                <Button
-                  onClick={handleCustomizeClick}
-                  variant="outline"
-                  className={`h-12 px-3 touch-manipulation active:scale-95 transition-transform ${sizeOptions.length > 0 ? 'flex-1' : ''}`}
-                  disabled={product.stock === 0}
-                >
-                  <Settings className="w-4 h-4" />
-                  <span className="hidden sm:inline ml-1 truncate">
-                    {sizeOptions.length > 0 ? "Custom" : "Modify"}
-                  </span>
-                </Button>
-              )}
-            </div>
+            
+            {isLowStock && (
+              <div className="absolute top-2 right-2">
+                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                  Low Stock
+                </Badge>
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Modification Dialog - Touch Optimized */}
-      <Dialog open={showModifiers} onOpenChange={setShowModifiers}>
-        <DialogContent className="max-w-lg w-[95vw] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="text-xl sm:text-2xl">
-              {sizeOptions.length > 0 ? `Customize ${product.name}` : `Modify ${product.name}`}
-            </DialogTitle>
-          </DialogHeader>
-          
-          <div className="space-y-6 touch-manipulation">
-            {/* Size Selection - Only show if size not pre-selected */}
-            {sizeOptions.length > 0 && !selectedSize && (
-              <div className="space-y-3">
-                <h4 className="font-medium text-lg sm:text-xl">Size (required)</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  {sizeOptions.map((size) => (
+          {/* Product Info */}
+          <div className="p-3">
+            <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">
+              {product.name}
+            </h3>
+            <p className="text-sm text-gray-600 mb-3 line-clamp-2 min-h-[2.5rem]">
+              {product.description || "No description available"}
+            </p>
+
+            {/* Size Options for Quick Add */}
+            {sizeOptions.length > 0 && !isOutOfStock && (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-gray-700 mb-2">Size:</p>
+                <div className="grid grid-cols-1 gap-1">
+                  {sizeOptions.slice(0, 3).map((size) => (
                     <Button
                       key={size.id}
-                      variant={selectedSize?.id === size.id ? "default" : "outline"}
-                      className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
-                      onClick={() => setSelectedSize(size)}
+                      onClick={() => handleQuickAdd(size)}
+                      variant="outline"
+                      size="sm"
+                      className="justify-between h-8 px-2 text-xs font-medium hover:bg-blue-50 hover:border-blue-300"
                     >
-                      <span className="font-medium">{size.name}</span>
-                      <span className="font-semibold">
-                        {formatPrice(parseFloat(product.price) + size.price)}
+                      <span>{size.name}</span>
+                      <span className="text-blue-600 font-semibold">
+                        {formatCurrency(parseFloat(product.price) + size.price)}
                       </span>
                     </Button>
                   ))}
@@ -264,49 +173,95 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
               </div>
             )}
 
-            {/* Show selected size when pre-selected */}
-            {selectedSize && (
-              <div className="space-y-3">
-                <h4 className="font-medium text-lg sm:text-xl">Selected Size</h4>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium text-blue-900">{selectedSize.name}</span>
-                    <span className="font-semibold text-blue-900">
-                      {formatPrice(parseFloat(product.price) + selectedSize.price)}
-                    </span>
-                  </div>
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              {!isOutOfStock && (
+                <>
+                  {sizeOptions.length === 0 ? (
+                    <Button
+                      onClick={() => onQuickAdd(product)}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-9"
+                      size="sm"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  ) : null}
+                  
+                  {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
+                    <Button
+                      onClick={handleCustomizeClick}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 h-9 hover:bg-gray-50"
+                    >
+                      <Settings className="w-4 h-4 mr-1" />
+                      Modify
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Stock Info */}
+            <div className="mt-2 text-xs text-gray-500 text-center">
+              {product.stock} {product.stock === 1 ? 'item' : 'items'} available
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Customization Modal */}
+      <Dialog open={showModifiers} onOpenChange={setShowModifiers}>
+        <DialogContent className="max-w-md w-[95vw] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl">Customize {product.name}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Size Selection */}
+            {sizeOptions.length > 0 && (
+              <div>
+                <h4 className="font-medium mb-2">Size (Required)</h4>
+                <div className="grid grid-cols-1 gap-2">
+                  {sizeOptions.map((size) => (
+                    <Button
+                      key={size.id}
+                      onClick={() => setSelectedSize(size)}
+                      variant={selectedSize?.id === size.id ? "default" : "outline"}
+                      className="justify-between h-10"
+                    >
+                      <span>{size.name}</span>
+                      <span>+{formatCurrency(size.price)}</span>
+                    </Button>
+                  ))}
                 </div>
               </div>
             )}
 
             {/* Other Modifiers */}
             {otherModifiers.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="font-medium text-lg sm:text-xl">Customer Requests</h4>
-                <div className="grid grid-cols-1 gap-3">
-                  {otherModifiers.map((modifier) => {
-                    const isSelected = selectedModifiers.some(m => m.id === modifier.id);
-                    return (
-                      <Button
-                        key={modifier.id}
-                        variant={isSelected ? "default" : "outline"}
-                        className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
-                        onClick={() => handleModifierToggle(modifier)}
-                      >
-                        <span className="font-medium">{modifier.name}</span>
-                        <span className="font-semibold">
-                          {modifier.price > 0 ? `+${formatPrice(modifier.price)}` : 'Free'}
-                        </span>
-                      </Button>
-                    );
-                  })}
+              <div>
+                <h4 className="font-medium mb-2">Add-ons (Optional)</h4>
+                <div className="grid grid-cols-1 gap-2">
+                  {otherModifiers.map((modifier) => (
+                    <Button
+                      key={modifier.id}
+                      onClick={() => toggleModifier(modifier)}
+                      variant={selectedModifiers.find(m => m.id === modifier.id) ? "default" : "outline"}
+                      className="justify-between h-10"
+                    >
+                      <span>{modifier.name}</span>
+                      <span>+{formatCurrency(modifier.price)}</span>
+                    </Button>
+                  ))}
                 </div>
               </div>
             )}
 
             {/* Special Instructions */}
-            <div className="space-y-3">
-              <h4 className="font-medium text-lg sm:text-xl">Special Instructions</h4>
+            <div>
+              <h4 className="font-medium mb-2">Special Instructions (Optional)</h4>
               <VirtualKeyboard
                 value={specialInstructions}
                 onChange={setSpecialInstructions}
@@ -315,22 +270,37 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
               />
             </div>
 
-            {/* Total Price */}
-            <div className="border-t pt-4">
-              <div className="flex justify-between items-center text-xl font-bold">
-                <span>Total:</span>
-                <span>{formatPrice(calculateTotalPrice())}</span>
+            {/* Price Summary */}
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Total Price:</span>
+                <span className="font-bold text-lg text-blue-600">
+                  {formatCurrency(
+                    parseFloat(product.price) +
+                    (selectedSize?.price || 0) +
+                    selectedModifiers.reduce((sum, mod) => sum + mod.price, 0)
+                  )}
+                </span>
               </div>
             </div>
 
-            {/* Add to Order Button */}
-            <Button
-              onClick={handleAddToOrder}
-              className="w-full h-16 sm:h-14 text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
-              disabled={sizeOptions.length > 0 && !selectedSize}
-            >
-              {sizeOptions.length > 0 && !selectedSize ? 'Select Size First' : 'Add to Order'}
-            </Button>
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
+              <Button
+                onClick={() => setShowModifiers(false)}
+                variant="outline"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddWithModifications}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Add to Cart
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
