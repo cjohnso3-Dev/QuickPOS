@@ -52,37 +52,7 @@ export default function OrderingPage() {
     },
   });
 
-  const addToCart = (product: ProductWithCategory) => {
-    setCart(prev => {
-      const existing = prev.find(item => 
-        item.product.id === product.id && 
-        !item.modifications?.length && 
-        !item.specialInstructions
-      );
-
-      if (existing) {
-        return prev.map(item =>
-          item.product.id === product.id && !item.modifications?.length && !item.specialInstructions
-            ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.unitPrice }
-            : item
-        );
-      } else {
-        const unitPrice = parseFloat(product.price);
-        return [...prev, { 
-          product, 
-          quantity: 1, 
-          unitPrice,
-          totalPrice: unitPrice,
-          modifications: [],
-          specialInstructions: ""
-        }];
-      }
-    });
-  };
-
-  const addCustomItemToCart = (cartItem: CartItemType) => {
-    setCart(prev => [...prev, cartItem]);
-  };
+  
 
   const updateCartQuantity = (productId: number, quantity: number) => {
     if (quantity === 0) {
