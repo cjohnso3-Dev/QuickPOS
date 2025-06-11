@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
-import { Plus, Settings, ShoppingCart } from "lucide-react";
+import { Plus, Settings, ShoppingCart, ChevronDown } from "lucide-react";
 import type { ProductWithCategory, CartItem } from "@shared/schema";
 
 interface QuickOrderCardProps {
@@ -25,6 +26,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
   const [showModifiers, setShowModifiers] = useState(false);
   const [selectedModifiers, setSelectedModifiers] = useState<ProductModifier[]>([]);
   const [selectedSize, setSelectedSize] = useState<ProductModifier | null>(null);
+  const [quickSelectedSize, setQuickSelectedSize] = useState<string>("");
   const [specialInstructions, setSpecialInstructions] = useState("");
 
   const modificationOptions = (product.modificationOptions as ProductModifier[]) || [];
@@ -39,14 +41,21 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
   };
 
   const handleQuickAdd = (sizeOverride?: ProductModifier) => {
+    let selectedSizeForAdd = sizeOverride;
+    
+    // If no size override and we have a quick selected size, use that
+    if (!sizeOverride && quickSelectedSize && sizeOptions.length > 0) {
+      selectedSizeForAdd = sizeOptions.find(size => size.id === quickSelectedSize);
+    }
+    
     const basePrice = parseFloat(product.price);
-    const sizePrice = sizeOverride ? sizeOverride.price : 0;
+    const sizePrice = selectedSizeForAdd ? selectedSizeForAdd.price : 0;
     const finalPrice = basePrice + sizePrice;
     
     const cartItem: CartItem = {
       product,
       quantity: 1,
-      modifications: sizeOverride ? [sizeOverride] : [],
+      modifications: selectedSizeForAdd ? [selectedSizeForAdd] : [],
       specialInstructions: undefined,
       unitPrice: finalPrice,
       totalPrice: finalPrice
@@ -104,9 +113,9 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
     <>
       <Card className={`relative overflow-hidden transition-all duration-200 ${
         isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:scale-[1.02]'
-      } h-32 sm:h-36`}>
-        <CardContent className="p-0 h-full">
-          <div className="flex h-full">
+      } h-40 sm:h-44`}>
+        <CardContent className="p-0 h-full flex flex-col">
+          <div className="flex flex-1 min-h-0">
             {/* Product Image - Left Side */}
             <div className="relative w-24 sm:w-32 flex-shrink-0">
               <img
@@ -152,80 +161,73 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                 </p>
                 
                 {/* Stock Info */}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 mb-2">
                   {product.stock} available
                 </p>
-              </div>
 
-              {/* Quick Size Selection */}
-              {sizeOptions.length > 0 && !isOutOfStock && (
-                <div className="mb-2">
-                  <div className="flex flex-wrap gap-1">
-                    {sizeOptions.slice(0, 2).map((size) => (
-                      <Button
-                        key={size.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickAdd(size);
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="h-6 px-2 text-xs font-medium hover:bg-blue-50 hover:border-blue-300 flex-1 min-w-0"
-                      >
-                        <span className="truncate">{size.name}</span>
-                      </Button>
-                    ))}
+                {/* Size Selection Dropdown */}
+                {sizeOptions.length > 0 && !isOutOfStock && (
+                  <div className="mb-2">
+                    <Select value={quickSelectedSize} onValueChange={setQuickSelectedSize}>
+                      <SelectTrigger className="h-7 text-xs border-gray-300 bg-white">
+                        <SelectValue placeholder="Select size" />
+                        <ChevronDown className="w-3 h-3 opacity-50" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sizeOptions.map((size) => (
+                          <SelectItem key={size.id} value={size.id} className="text-xs">
+                            <div className="flex justify-between items-center w-full">
+                              <span>{size.name}</span>
+                              <span className="ml-2 text-gray-500">
+                                {size.price > 0 ? `+${formatCurrency(size.price)}` : ''}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex gap-1.5">
-                {!isOutOfStock && (
-                  <>
-                    {sizeOptions.length === 0 ? (
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onQuickAdd(product);
-                        }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs font-semibold"
-                        size="sm"
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Add
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickAdd(sizeOptions[0]);
-                        }}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs font-semibold"
-                        size="sm"
-                      >
-                        <Plus className="w-3 h-3 mr-1" />
-                        Quick
-                      </Button>
-                    )}
-                    
-                    {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCustomizeClick();
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="flex-shrink-0 h-8 px-2 hover:bg-gray-50"
-                      >
-                        <Settings className="w-3 h-3" />
-                      </Button>
-                    )}
-                  </>
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Action Buttons - Bottom */}
+          <div className="px-2 pb-2 sm:px-3 sm:pb-3">
+            {!isOutOfStock && (
+              <div className="flex gap-1.5">
+                <Button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (sizeOptions.length === 0) {
+                      onQuickAdd(product);
+                    } else {
+                      handleQuickAdd();
+                    }
+                  }}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-9 text-sm font-semibold"
+                  size="sm"
+                  disabled={sizeOptions.length > 0 && !quickSelectedSize}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  {sizeOptions.length === 0 ? 'Add' : 'Quick Add'}
+                </Button>
+                
+                {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCustomizeClick();
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="flex-shrink-0 h-9 px-3 hover:bg-gray-50"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
