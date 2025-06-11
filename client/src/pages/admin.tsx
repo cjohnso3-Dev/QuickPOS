@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import ProductModal from "@/components/ProductModal";
+import PosAdminDashboard from "@/components/PosAdminDashboard";
 import type { ProductWithCategory, OrderWithDetails, Setting, UserWithTimeClock } from "@shared/schema";
 import { 
   DollarSign, 
@@ -52,7 +53,7 @@ export default function AdminPage() {
   const {
     data: orders = [],
     isLoading: ordersLoading,
-  } = useQuery<OrderWithItems[]>({
+  } = useQuery<OrderWithDetails[]>({
     queryKey: ["/api/orders"],
   });
 

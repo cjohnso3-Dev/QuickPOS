@@ -66,11 +66,19 @@ export default function OrderingPage() {
       if (existing) {
         return prev.map(item =>
           item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? { ...item, quantity: item.quantity + 1, totalPrice: (item.quantity + 1) * item.unitPrice }
             : item
         );
       } else {
-        return [...prev, { product, quantity: 1 }];
+        const unitPrice = parseFloat(product.price);
+        return [...prev, { 
+          product, 
+          quantity: 1, 
+          unitPrice,
+          totalPrice: unitPrice,
+          modifications: [],
+          specialInstructions: ""
+        }];
       }
     });
     
