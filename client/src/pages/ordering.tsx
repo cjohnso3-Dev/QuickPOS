@@ -1,3 +1,4 @@
+
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -12,11 +13,33 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
-import { Receipt, CreditCard, DollarSign, Trash2, ShoppingCart, User, Shield, Percent, Gift } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { 
+  Receipt, 
+  CreditCard, 
+  DollarSign, 
+  Trash2, 
+  ShoppingCart, 
+  User, 
+  Shield, 
+  Percent, 
+  Gift,
+  Search,
+  Plus,
+  Calendar,
+  Settings,
+  Users,
+  Clock,
+  Menu,
+  ChevronRight,
+  ChevronDown,
+  X
+} from "lucide-react";
 import QuickOrderCard from "@/components/QuickOrderCard";
 import CartItem from "@/components/CartItem";
 import CartItemEditor from "@/components/CartItemEditor";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { queryClient } from "@/lib/queryClient";
 import type { ProductWithCategory, Category, CartItem as CartItemType, TipOption, PaymentSplit, Discount } from "@shared/schema";
 
@@ -30,7 +53,11 @@ export default function OrderingPage() {
   const [appliedDiscount, setAppliedDiscount] = useState<Discount | null>(null);
   const [compReason, setCompReason] = useState("");
   const [compAmount, setCompAmount] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isOrderPanelCollapsed, setIsOrderPanelCollapsed] = useState(false);
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const { data: products = [], isLoading: productsLoading } = useQuery<ProductWithCategory[]>({
     queryKey: ["/api/products"],
@@ -83,7 +110,6 @@ export default function OrderingPage() {
   const [splitAmount2, setSplitAmount2] = useState("");
   const printReceiptRef = useRef<() => void>();
 
-
   const updateCartQuantity = (productId: number, quantity: number) => {
     if (quantity === 0) {
       setCart(prev => prev.filter((_, index) => 
@@ -122,7 +148,6 @@ export default function OrderingPage() {
   };
 
   const handleManagerLogin = () => {
-    // In production, this would validate against actual manager credentials
     if (managerPinCode === "1234" || managerPinCode === "manager") {
       setIsManagerAuthorized(true);
       toast({
@@ -166,7 +191,6 @@ export default function OrderingPage() {
 
     const compValue = parseFloat(compAmount) || calculateTotal();
     
-    // Apply comp as 100% discount or specific amount
     const compDiscount: Discount = {
       id: -1,
       name: `Comp: ${compReason}`,
@@ -235,7 +259,14 @@ export default function OrderingPage() {
     ? products.filter(product => product.categoryId === selectedCategory)
     : products;
 
-  const activeProducts = filteredProducts.filter(product => product.isActive && product.stock > 0);
+  const searchFilteredProducts = searchQuery
+    ? filteredProducts.filter(product => 
+        product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        product.description?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : filteredProducts;
+
+  const activeProducts = searchFilteredProducts.filter(product => product.isActive && product.stock > 0);
 
   const handleQuickAdd = (product: ProductWithCategory) => {
     const cartItem: CartItemType = {
@@ -317,188 +348,418 @@ export default function OrderingPage() {
     setCart(prev => prev.filter(item => item.product.id !== itemToRemove.product.id));
   };
 
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto">
-        {/* Employee Header */}
-        <div className="bg-white border-b p-3 sm:p-4 sticky top-0 z-10 shadow-sm">
+    <div className="h-screen bg-gray-100 flex overflow-hidden">
+      {/* Left Sidebar Navigation */}
+      <div className={`${isSidebarCollapsed && !isMobile ? 'w-16' : 'w-64'} ${isMobile ? 'hidden' : 'flex'} bg-white border-r border-gray-200 flex-col transition-all duration-300`}>
+        {/* Brand Header */}
+        <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h1 className="text-lg sm:text-xl font-bold text-gray-800">POS Terminal</h1>
-            <div className="text-xs sm:text-sm text-gray-600 bg-blue-50 px-2 py-1 rounded">
-              Employee Interface
+            {!isSidebarCollapsed && (
+              <h1 className="text-xl font-bold text-gray-800">Restro POS</h1>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-2"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Navigation Menu */}
+        <div className="flex-1 py-4">
+          <nav className="space-y-2 px-3">
+            <Button 
+              variant="default" 
+              className="w-full justify-start bg-orange-500 hover:bg-orange-600"
+            >
+              <ShoppingCart className="h-4 w-4" />
+              {!isSidebarCollapsed && <span className="ml-2">Orders</span>}
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <Users className="h-4 w-4" />
+              {!isSidebarCollapsed && <span className="ml-2">Customers</span>}
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <Calendar className="h-4 w-4" />
+              {!isSidebarCollapsed && <span className="ml-2">Reservations</span>}
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <Clock className="h-4 w-4" />
+              {!isSidebarCollapsed && <span className="ml-2">Time Clock</span>}
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <Settings className="h-4 w-4" />
+              {!isSidebarCollapsed && <span className="ml-2">Settings</span>}
+            </Button>
+          </nav>
+        </div>
+
+        {/* Bottom Actions */}
+        <div className="p-3 border-t">
+          <Button
+            onClick={() => setShowManagerInterface(true)}
+            variant="outline"
+            className="w-full justify-start"
+          >
+            <Shield className="h-4 w-4" />
+            {!isSidebarCollapsed && <span className="ml-2">Manager</span>}
+          </Button>
+        </div>
+      </div>
+
+      {/* Mobile Sidebar Toggle */}
+      {isMobile && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="fixed top-4 left-4 z-50 bg-white shadow-md"
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+      )}
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Top Header */}
+        <div className="bg-white border-b border-gray-200 p-4">
+          <div className="flex items-center justify-between">
+            {/* Search Bar */}
+            <div className="flex-1 max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  type="text"
+                  placeholder="Search products..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 h-10"
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 ml-4">
+              <Button variant="outline" size="sm">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Customer
+              </Button>
+              <Button variant="outline" size="sm" className="bg-orange-500 text-white border-orange-500 hover:bg-orange-600">
+                Select Table
+              </Button>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-0">
-          {/* Products Section - Employee View */}
-          <div className="xl:col-span-2 p-3 sm:p-4 space-y-4">
-            {/* Category Tabs - Touch Optimized for Speed */}
-            <div className="bg-white rounded-lg p-3 shadow-sm">
-              <Tabs value={selectedCategory?.toString() || "all"} className="w-full">
-                <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 h-auto gap-1 bg-gray-100 p-1">
-                  <TabsTrigger 
-                    value="all" 
-                    onClick={() => setSelectedCategory(null)}
-                    className="h-12 text-xs sm:text-sm font-medium touch-manipulation data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-colors"
+        {/* Main Layout */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Products Section */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Category Tabs */}
+            <div className="bg-white border-b border-gray-200 p-4">
+              <div className="flex gap-2 overflow-x-auto">
+                <Button
+                  onClick={() => setSelectedCategory(null)}
+                  variant={selectedCategory === null ? "default" : "outline"}
+                  size="sm"
+                  className={selectedCategory === null ? "bg-orange-500 hover:bg-orange-600" : ""}
+                >
+                  All
+                </Button>
+                {categories.map((category) => (
+                  <Button
+                    key={category.id}
+                    onClick={() => setSelectedCategory(category.id)}
+                    variant={selectedCategory === category.id ? "default" : "outline"}
+                    size="sm"
+                    className={selectedCategory === category.id ? "bg-orange-500 hover:bg-orange-600" : ""}
                   >
-                    All Items
-                  </TabsTrigger>
-                  {categories.map((category) => (
-                    <TabsTrigger
-                      key={category.id}
-                      value={category.id.toString()}
-                      onClick={() => setSelectedCategory(category.id)}
-                      className="h-12 text-xs sm:text-sm font-medium touch-manipulation data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-colors"
-                    >
-                      {category.name}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+                    {category.name}
+                  </Button>
+                ))}
+              </div>
             </div>
 
-            {/* Products Grid - Optimized for Employee Speed */}
-            {productsLoading ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {[...Array(8)].map((_, i) => (
-                  <div key={i} className="h-64 bg-gray-200 rounded-lg animate-pulse" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {activeProducts.map((product) => (
-                  <QuickOrderCard
-                    key={product.id}
-                    product={product}
-                    onQuickAdd={handleQuickAdd}
-                    onCustomAdd={handleCustomAdd}
-                  />
-                ))}
-              </div>
-            )}
+            {/* Products Grid */}
+            <div className="flex-1 p-4 overflow-y-auto">
+              {productsLoading ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {[...Array(10)].map((_, i) => (
+                    <div key={i} className="aspect-square bg-gray-200 rounded-lg animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                  {activeProducts.map((product) => (
+                    <QuickOrderCard
+                      key={product.id}
+                      product={product}
+                      onQuickAdd={handleQuickAdd}
+                      onCustomAdd={handleCustomAdd}
+                    />
+                  ))}
+                </div>
+              )}
 
-            {activeProducts.length === 0 && !productsLoading && (
-              <div className="text-center py-12 bg-white rounded-lg">
-                <p className="text-gray-500">No products available in this category.</p>
-              </div>
-            )}
+              {activeProducts.length === 0 && !productsLoading && (
+                <div className="text-center py-12">
+                  <p className="text-gray-500">
+                    {searchQuery ? 'No products found matching your search.' : 'No products available in this category.'}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Order Cart - Fixed Right Panel */}
-          <div className="xl:col-span-1 bg-white xl:min-h-screen border-t xl:border-t-0 xl:border-l xl:sticky xl:top-16">
-            <div className="p-4 xl:p-6">
-              {/* Cart Header */}
-              <div className="flex items-center gap-2 mb-4">
-                <ShoppingCart className="h-5 w-5 text-blue-600" />
-                <h2 className="text-lg font-semibold">Current Order</h2>
-                <Badge variant="secondary" className="ml-auto">
-                  {cart.length} items
-                </Badge>
+          {/* Order Panel */}
+          <div className={`${isOrderPanelCollapsed && !isMobile ? 'w-12' : 'w-80'} ${isMobile ? 'hidden' : 'flex'} bg-white border-l border-gray-200 flex-col transition-all duration-300`}>
+            {/* Order Header */}
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                {!isOrderPanelCollapsed && (
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-semibold">Order #{new Date().getTime().toString().slice(-6)}</h2>
+                    <Badge variant="secondary">{cart.length}</Badge>
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsOrderPanelCollapsed(!isOrderPanelCollapsed)}
+                  className="p-2"
+                >
+                  {isOrderPanelCollapsed ? <ChevronRight className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                </Button>
               </div>
+            </div>
 
-              {/* Customer Info */}
-              <div className="space-y-3 mb-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <User className="h-4 w-4" />
-                  Customer
+            {!isOrderPanelCollapsed && (
+              <>
+                {/* Customer Info */}
+                <div className="p-4 border-b border-gray-200">
+                  <Input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Customer name"
+                    className="text-sm"
+                  />
                 </div>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full p-3 text-base border border-gray-300 rounded-md touch-manipulation focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Customer name or order number..."
-                />
+
+                {/* Cart Items */}
+                <div className="flex-1 overflow-y-auto">
+                  {cart.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500">
+                      <ShoppingCart className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm">No items added</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {cart.map((item, index) => (
+                        <div key={`${item.product.id}-${index}`} className="border-b border-gray-100 p-3">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-sm">{item.quantity}</span>
+                                <span className="text-sm">{item.product.name}</span>
+                                <span className="font-medium text-sm">{formatCurrency(item.totalPrice)}</span>
+                              </div>
+                              {item.modifications && item.modifications.length > 0 && (
+                                <div className="mt-1">
+                                  {item.modifications.map((mod, idx) => (
+                                    <p key={idx} className="text-xs text-gray-500">• {mod}</p>
+                                  ))}
+                                </div>
+                              )}
+                              {item.specialInstructions && (
+                                <p className="text-xs text-gray-500 mt-1">Note: {item.specialInstructions}</p>
+                              )}
+                              <div className="flex gap-2 mt-2">
+                                <Input
+                                  type="number"
+                                  value={item.quantity}
+                                  onChange={(e) => updateCartQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                                  className="w-16 h-6 text-xs"
+                                  min="0"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditCartItem(item)}
+                                  className="h-6 px-2 text-xs"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removeFromCart(item.product)}
+                                  className="h-6 px-2 text-xs text-red-600"
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Order Summary */}
+                {cart.length > 0 && (
+                  <div className="border-t border-gray-200 p-4 space-y-3">
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span>{formatCurrency(calculateTotal())}</span>
+                      </div>
+                      {appliedDiscount && (
+                        <div className="flex justify-between text-green-600">
+                          <span>Discount</span>
+                          <span>-{formatCurrency(calculateTotal() - calculateDiscountedTotal())}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Tax</span>
+                        <span>{formatCurrency(calculateDiscountedTotal() * 0.08)}</span>
+                      </div>
+                      <Separator />
+                      <div className="flex justify-between font-bold text-lg">
+                        <span>Payable Amount</span>
+                        <span>{formatCurrency(calculateDiscountedTotal() * 1.08)}</span>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="space-y-2">
+                      <Button
+                        onClick={handleCheckout}
+                        className="w-full bg-orange-500 hover:bg-orange-600"
+                        disabled={createOrderMutation.isPending}
+                      >
+                        {createOrderMutation.isPending ? "Processing..." : "Hold Order"}
+                      </Button>
+                      <Button
+                        onClick={handleCheckout}
+                        className="w-full bg-green-600 hover:bg-green-700"
+                        disabled={createOrderMutation.isPending}
+                      >
+                        {createOrderMutation.isPending ? "Processing..." : "Proceed"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Order Panel */}
+      {isMobile && (
+        <Collapsible open={!isOrderPanelCollapsed} onOpenChange={setIsOrderPanelCollapsed}>
+          <CollapsibleTrigger asChild>
+            <Button
+              className="fixed bottom-4 right-4 z-50 bg-orange-500 hover:bg-orange-600"
+              size="lg"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              {cart.length > 0 && (
+                <Badge className="ml-2 bg-white text-orange-500">
+                  {cart.length}
+                </Badge>
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="fixed inset-0 bg-white z-40 flex flex-col">
+              {/* Mobile Order Header */}
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="font-semibold">Current Order</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsOrderPanelCollapsed(true)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
 
-              <Separator className="my-4" />
-
-              {/* Cart Items */}
-              <div className="space-y-3 max-h-64 xl:max-h-96 overflow-y-auto mb-4">
+              {/* Mobile Cart Content */}
+              <div className="flex-1 overflow-y-auto p-4">
                 {cart.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <ShoppingCart className="h-12 w-12 mx-auto mb-2 text-gray-300" />
-                    <p>No items in cart</p>
-                    <p className="text-sm">Tap items to add</p>
+                  <div className="text-center py-12">
+                    <ShoppingCart className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p className="text-gray-500">No items in cart</p>
                   </div>
                 ) : (
-                  cart.map((item) => (
+                  <div className="space-y-4">
+                    {cart.map((item, index) => (
                       <CartItem
-                        key={item.product.id}
+                        key={`${item.product.id}-${index}`}
                         item={item}
                         onUpdateQuantity={updateCartQuantity}
                         onRemove={removeFromCart}
                         onEdit={handleEditCartItem}
                       />
-                    ))
+                    ))}
+                  </div>
                 )}
               </div>
 
-              {/* Order Total */}
+              {/* Mobile Order Summary */}
               {cart.length > 0 && (
-                <>
-                  <div className="space-y-2 bg-gray-50 p-4 rounded-lg mb-4">
-                    <div className="flex justify-between text-sm">
-                      <span>Subtotal:</span>
+                <div className="border-t border-gray-200 p-4">
+                  <div className="space-y-2 text-sm mb-4">
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
                       <span>{formatCurrency(calculateTotal())}</span>
                     </div>
-                    
                     {appliedDiscount && (
-                      <div className="flex justify-between text-sm text-green-600">
-                        <span>Discount ({appliedDiscount.name}):</span>
+                      <div className="flex justify-between text-green-600">
+                        <span>Discount</span>
                         <span>-{formatCurrency(calculateTotal() - calculateDiscountedTotal())}</span>
                       </div>
                     )}
-                    
-                    <div className="flex justify-between text-sm">
-                      <span>Tax (8%):</span>
+                    <div className="flex justify-between">
+                      <span>Tax</span>
                       <span>{formatCurrency(calculateDiscountedTotal() * 0.08)}</span>
                     </div>
                     <Separator />
-                    <div className="flex justify-between font-bold text-xl">
-                      <span>Total:</span>
-                      <span className="text-blue-600">{formatCurrency(calculateDiscountedTotal() * 1.08)}</span>
+                    <div className="flex justify-between font-bold text-lg">
+                      <span>Total</span>
+                      <span>{formatCurrency(calculateDiscountedTotal() * 1.08)}</span>
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <Button
                       onClick={handleCheckout}
-                      className="w-full h-14 text-lg font-semibold bg-blue-600 hover:bg-blue-700 touch-manipulation active:scale-98 transition-all"
+                      className="w-full bg-orange-500 hover:bg-orange-600"
                       disabled={createOrderMutation.isPending}
                     >
-                      <CreditCard className="w-5 h-5 mr-2" />
-                      {createOrderMutation.isPending ? "Processing..." : "Process Payment"}
+                      Hold Order
                     </Button>
-                    
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        onClick={() => setShowManagerInterface(true)}
-                        variant="outline"
-                        className="h-12 touch-manipulation border-orange-200 text-orange-600 hover:bg-orange-50"
-                      >
-                        <Shield className="w-4 h-4 mr-1" />
-                        Manager
-                      </Button>
-                      <Button
-                        onClick={clearCart}
-                        variant="outline"
-                        className="h-12 touch-manipulation border-red-200 text-red-600 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" />
-                        Clear
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={handleCheckout}
+                      className="w-full bg-green-600 hover:bg-green-700"
+                      disabled={createOrderMutation.isPending}
+                    >
+                      {createOrderMutation.isPending ? "Processing..." : "Proceed"}
+                    </Button>
                   </div>
-                </>
+                </div>
               )}
             </div>
-          </div>
-        </div>
-      </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
 
       {/* Cart Item Editor Modal */}
       <CartItemEditor
@@ -672,7 +933,6 @@ export default function OrderingPage() {
                       variant="outline"
                       className="justify-start h-12 p-3"
                       onClick={() => {
-                        // This would typically open a price override dialog
                         toast({
                           title: "Price Override",
                           description: "Price override functionality would be implemented here.",
@@ -687,7 +947,6 @@ export default function OrderingPage() {
                       variant="outline"
                       className="justify-start h-12 p-3"
                       onClick={() => {
-                        // This would typically open a tax override dialog
                         toast({
                           title: "Tax Override",
                           description: "Tax override functionality would be implemented here.",
@@ -724,8 +983,6 @@ export default function OrderingPage() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Checkout Modal */}
     </div>
   );
 }
