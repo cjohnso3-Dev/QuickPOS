@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import ProductModal from "@/components/ProductModal";
-import type { ProductWithCategory, OrderWithItems, Setting } from "@shared/schema";
+import type { ProductWithCategory, OrderWithDetails, Setting, UserWithTimeClock } from "@shared/schema";
 import { 
   DollarSign, 
   ShoppingBag, 
