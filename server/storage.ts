@@ -228,7 +228,12 @@ export class MemStorage implements IStorage {
         minStock: 5,
         maxStock: 50,
         isActive: true,
+        hasSizes: true,
         allowModifications: true,
+        itemType: "product",
+        requiresInventory: true,
+        taxable: true,
+        serviceDetails: null,
         modificationOptions: [
           { id: "size", name: "Size", options: [
             { name: "Small", price: 0 },

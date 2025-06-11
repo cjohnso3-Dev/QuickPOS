@@ -88,8 +88,8 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
 
   return (
     <>
-      <Card className="group hover:shadow-lg transition-all duration-200 border-2 hover:border-blue-200">
-        <CardContent className="p-4">
+      <Card className="group hover:shadow-lg transition-all duration-200 border-2 hover:border-blue-200 touch-manipulation">
+        <CardContent className="p-3 sm:p-4">
           <div className="space-y-3">
             {/* Product Image */}
             {product.imageUrl && (
@@ -105,14 +105,14 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
             {/* Product Info */}
             <div className="space-y-2">
               <div className="flex items-start justify-between">
-                <h3 className="font-semibold text-lg leading-tight">{product.name}</h3>
-                <Badge variant="secondary" className="ml-2">
+                <h3 className="font-semibold text-base sm:text-lg leading-tight">{product.name}</h3>
+                <Badge variant="secondary" className="ml-2 text-sm">
                   {formatPrice(parseFloat(product.price))}
                 </Badge>
               </div>
               
               {product.description && (
-                <p className="text-sm text-gray-600 line-clamp-2">{product.description}</p>
+                <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{product.description}</p>
               )}
 
               {/* Stock Status */}
@@ -123,25 +123,26 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
               )}
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Touch Optimized */}
             <div className="flex gap-2 pt-2">
               <Button
                 onClick={handleQuickAdd}
-                className="flex-1 h-12 text-lg font-semibold"
+                className="flex-1 h-14 sm:h-12 text-base sm:text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
                 disabled={product.stock === 0}
               >
                 <Plus className="w-5 h-5 mr-2" />
-                Quick Add
+                <span className="hidden xs:inline">Quick </span>Add
               </Button>
               
               {(product.allowModifications && modificationOptions.length > 0) && (
                 <Button
                   onClick={handleCustomizeClick}
                   variant="outline"
-                  className="h-12 px-4"
+                  className="h-14 sm:h-12 px-3 sm:px-4 touch-manipulation active:scale-95 transition-transform"
                   disabled={product.stock === 0}
                 >
                   <Settings className="w-5 h-5" />
+                  <span className="hidden sm:inline ml-1">Modify</span>
                 </Button>
               )}
             </div>
@@ -149,27 +150,27 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
         </CardContent>
       </Card>
 
-      {/* Modification Dialog */}
+      {/* Modification Dialog - Touch Optimized */}
       <Dialog open={showModifiers} onOpenChange={setShowModifiers}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-lg w-[95vw] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Customize {product.name}</DialogTitle>
+            <DialogTitle className="text-xl sm:text-2xl">Customize {product.name}</DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-6">
+          <div className="space-y-6 touch-manipulation">
             {/* Size Selection */}
             {sizeOptions.length > 0 && (
               <div className="space-y-3">
-                <h4 className="font-medium text-lg">Size</h4>
-                <div className="grid grid-cols-1 gap-2">
+                <h4 className="font-medium text-lg sm:text-xl">Size</h4>
+                <div className="grid grid-cols-1 gap-3">
                   {sizeOptions.map((size) => (
                     <Button
                       key={size.id}
                       variant={selectedSize?.id === size.id ? "default" : "outline"}
-                      className="justify-between h-auto p-3"
+                      className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
                       onClick={() => setSelectedSize(size)}
                     >
-                      <span>{size.name}</span>
+                      <span className="font-medium">{size.name}</span>
                       <span className="font-semibold">
                         {size.price > 0 ? `+${formatPrice(size.price)}` : 'Base'}
                       </span>
@@ -182,18 +183,18 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
             {/* Other Modifiers */}
             {otherModifiers.length > 0 && (
               <div className="space-y-3">
-                <h4 className="font-medium text-lg">Add-ons</h4>
-                <div className="grid grid-cols-1 gap-2">
+                <h4 className="font-medium text-lg sm:text-xl">Add-ons</h4>
+                <div className="grid grid-cols-1 gap-3">
                   {otherModifiers.map((modifier) => {
                     const isSelected = selectedModifiers.some(m => m.id === modifier.id);
                     return (
                       <Button
                         key={modifier.id}
                         variant={isSelected ? "default" : "outline"}
-                        className="justify-between h-auto p-3"
+                        className="justify-between h-14 sm:h-12 p-4 text-base touch-manipulation active:scale-95 transition-transform"
                         onClick={() => handleModifierToggle(modifier)}
                       >
-                        <span>{modifier.name}</span>
+                        <span className="font-medium">{modifier.name}</span>
                         <span className="font-semibold">
                           {modifier.price > 0 ? `+${formatPrice(modifier.price)}` : 'Free'}
                         </span>
@@ -206,9 +207,9 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
 
             {/* Special Instructions */}
             <div className="space-y-3">
-              <h4 className="font-medium text-lg">Special Instructions</h4>
+              <h4 className="font-medium text-lg sm:text-xl">Special Instructions</h4>
               <textarea
-                className="w-full p-3 border rounded-md resize-none h-20"
+                className="w-full p-4 border rounded-md resize-none h-24 text-base touch-manipulation"
                 placeholder="Any special requests..."
                 value={specialInstructions}
                 onChange={(e) => setSpecialInstructions(e.target.value)}
@@ -217,7 +218,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
 
             {/* Total Price */}
             <div className="border-t pt-4">
-              <div className="flex justify-between items-center text-lg font-semibold">
+              <div className="flex justify-between items-center text-xl font-bold">
                 <span>Total:</span>
                 <span>{formatPrice(calculateTotalPrice())}</span>
               </div>
@@ -226,7 +227,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
             {/* Add to Order Button */}
             <Button
               onClick={handleAddToOrder}
-              className="w-full h-12 text-lg font-semibold"
+              className="w-full h-16 sm:h-14 text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
             >
               Add to Order
             </Button>

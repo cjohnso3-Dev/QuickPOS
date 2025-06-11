@@ -8,8 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import QuickOrderCard from "@/components/QuickOrderCard";
-import CartItem from "@/components/CartItem";
-import { ShoppingCart, Trash2, CreditCard, DollarSign } from "lucide-react";
+import { ShoppingCart, Trash2, CreditCard, User } from "lucide-react";
 import type { ProductWithCategory, CartItem as CartItemType, Category } from "@shared/schema";
 
 export default function OrderingPage() {
@@ -130,7 +129,7 @@ export default function OrderingPage() {
 
     const orderData = {
       customerName,
-      orderType: "dine-in",
+      orderType: "takeout",
       items: cart.map(item => ({
         productId: item.product.id,
         quantity: item.quantity,
@@ -154,104 +153,117 @@ export default function OrderingPage() {
   const activeProducts = filteredProducts.filter(product => product.isActive && product.stock > 0);
 
   return (
-    <div className="container mx-auto p-4 max-w-7xl">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Products Section */}
-        <div className="lg:col-span-2 space-y-4">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto">
+        {/* Employee Header */}
+        <div className="bg-white border-b p-3 sm:p-4 sticky top-0 z-10 shadow-sm">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold">Order Menu</h1>
-            <div className="text-sm text-muted-foreground">
-              Fast service • Quick add or customize
+            <h1 className="text-lg sm:text-xl font-bold text-gray-800">POS Terminal</h1>
+            <div className="text-xs sm:text-sm text-gray-600 bg-blue-50 px-2 py-1 rounded">
+              Employee Interface
             </div>
           </div>
-
-          {/* Category Filter */}
-          <Tabs value={selectedCategory?.toString() || "all"} className="w-full">
-            <TabsList className="grid grid-cols-4 lg:grid-cols-6">
-              <TabsTrigger 
-                value="all" 
-                onClick={() => setSelectedCategory(null)}
-                className="text-xs"
-              >
-                All Items
-              </TabsTrigger>
-              {categories.map((category) => (
-                <TabsTrigger
-                  key={category.id}
-                  value={category.id.toString()}
-                  onClick={() => setSelectedCategory(category.id)}
-                  className="text-xs"
-                >
-                  {category.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          {/* Products Grid */}
-          {productsLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-64 bg-gray-200 rounded-lg animate-pulse" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activeProducts.map((product) => (
-                <QuickOrderCard
-                  key={product.id}
-                  product={product}
-                  onQuickAdd={addToCart}
-                  onCustomAdd={addCustomItemToCart}
-                />
-              ))}
-            </div>
-          )}
-
-          {activeProducts.length === 0 && !productsLoading && (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground">No products available in this category.</p>
-            </div>
-          )}
         </div>
 
-        {/* Cart Section */}
-        <div className="space-y-4">
-          <Card className="sticky top-4">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5" />
-                Current Order ({cart.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Customer Name */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Customer Name</label>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-0">
+          {/* Products Section - Employee View */}
+          <div className="xl:col-span-2 p-3 sm:p-4 space-y-4">
+            {/* Category Tabs - Touch Optimized for Speed */}
+            <div className="bg-white rounded-lg p-3 shadow-sm">
+              <Tabs value={selectedCategory?.toString() || "all"} className="w-full">
+                <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 h-auto gap-1 bg-gray-100 p-1">
+                  <TabsTrigger 
+                    value="all" 
+                    onClick={() => setSelectedCategory(null)}
+                    className="h-12 text-xs sm:text-sm font-medium touch-manipulation data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-colors"
+                  >
+                    All Items
+                  </TabsTrigger>
+                  {categories.map((category) => (
+                    <TabsTrigger
+                      key={category.id}
+                      value={category.id.toString()}
+                      onClick={() => setSelectedCategory(category.id)}
+                      className="h-12 text-xs sm:text-sm font-medium touch-manipulation data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-colors"
+                    >
+                      {category.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
+
+            {/* Products Grid - Optimized for Employee Speed */}
+            {productsLoading ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {[...Array(8)].map((_, i) => (
+                  <div key={i} className="h-64 bg-gray-200 rounded-lg animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {activeProducts.map((product) => (
+                  <QuickOrderCard
+                    key={product.id}
+                    product={product}
+                    onQuickAdd={addToCart}
+                    onCustomAdd={addCustomItemToCart}
+                  />
+                ))}
+              </div>
+            )}
+
+            {activeProducts.length === 0 && !productsLoading && (
+              <div className="text-center py-12 bg-white rounded-lg">
+                <p className="text-gray-500">No products available in this category.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Order Cart - Fixed Right Panel */}
+          <div className="xl:col-span-1 bg-white xl:min-h-screen border-t xl:border-t-0 xl:border-l xl:sticky xl:top-16">
+            <div className="p-4 xl:p-6">
+              {/* Cart Header */}
+              <div className="flex items-center gap-2 mb-4">
+                <ShoppingCart className="h-5 w-5 text-blue-600" />
+                <h2 className="text-lg font-semibold">Current Order</h2>
+                <Badge variant="secondary" className="ml-auto">
+                  {cart.length} items
+                </Badge>
+              </div>
+
+              {/* Customer Info */}
+              <div className="space-y-3 mb-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <User className="h-4 w-4" />
+                  Customer
+                </div>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full p-2 border rounded-md"
-                  placeholder="Customer name..."
+                  className="w-full p-3 text-base border border-gray-300 rounded-md touch-manipulation focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Customer name or order number..."
                 />
               </div>
 
-              <Separator />
+              <Separator className="my-4" />
 
               {/* Cart Items */}
-              <div className="space-y-3 max-h-96 overflow-y-auto">
+              <div className="space-y-3 max-h-64 xl:max-h-96 overflow-y-auto mb-4">
                 {cart.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">
-                    Cart is empty
-                  </p>
+                  <div className="text-center py-8 text-gray-500">
+                    <ShoppingCart className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                    <p>No items in cart</p>
+                    <p className="text-sm">Tap items to add</p>
+                  </div>
                 ) : (
                   cart.map((item, index) => (
-                    <div key={index} className="border rounded-lg p-3 space-y-2">
+                    <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h4 className="font-medium">{item.product.name}</h4>
-                          <div className="text-sm text-muted-foreground">
+                          <h4 className="font-medium text-gray-900">{item.product.name}</h4>
+                          <div className="text-sm text-gray-600">
                             {formatCurrency(item.unitPrice)} each
                           </div>
                         </div>
@@ -259,7 +271,7 @@ export default function OrderingPage() {
                           size="sm"
                           variant="ghost"
                           onClick={() => removeCartItem(index)}
-                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                          className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50 touch-manipulation"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -267,9 +279,9 @@ export default function OrderingPage() {
 
                       {/* Modifications */}
                       {item.modifications && item.modifications.length > 0 && (
-                        <div className="text-xs space-y-1">
+                        <div className="text-xs space-y-1 pl-2 border-l-2 border-blue-200">
                           {item.modifications.map((mod: any, modIndex) => (
-                            <div key={modIndex} className="flex justify-between text-muted-foreground">
+                            <div key={modIndex} className="flex justify-between text-gray-600">
                               <span>+ {mod.name}</span>
                               {mod.price > 0 && <span>{formatCurrency(mod.price)}</span>}
                             </div>
@@ -279,33 +291,33 @@ export default function OrderingPage() {
 
                       {/* Special Instructions */}
                       {item.specialInstructions && (
-                        <div className="text-xs text-muted-foreground italic">
+                        <div className="text-xs text-gray-600 italic bg-yellow-50 p-2 rounded">
                           Note: {item.specialInstructions}
                         </div>
                       )}
 
-                      {/* Quantity and Total */}
+                      {/* Quantity Controls */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => updateCartQuantity(item.product.id, item.quantity - 1)}
-                            className="h-8 w-8 p-0"
+                            className="h-8 w-8 p-0 touch-manipulation"
                           >
                             -
                           </Button>
-                          <span className="w-8 text-center">{item.quantity}</span>
+                          <span className="w-8 text-center font-medium">{item.quantity}</span>
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => updateCartQuantity(item.product.id, item.quantity + 1)}
-                            className="h-8 w-8 p-0"
+                            className="h-8 w-8 p-0 touch-manipulation"
                           >
                             +
                           </Button>
                         </div>
-                        <div className="font-semibold">
+                        <div className="font-semibold text-blue-600">
                           {formatCurrency(item.totalPrice)}
                         </div>
                       </div>
@@ -314,12 +326,10 @@ export default function OrderingPage() {
                 )}
               </div>
 
+              {/* Order Total */}
               {cart.length > 0 && (
                 <>
-                  <Separator />
-                  
-                  {/* Order Summary */}
-                  <div className="space-y-2">
+                  <div className="space-y-2 bg-gray-50 p-4 rounded-lg mb-4">
                     <div className="flex justify-between text-sm">
                       <span>Subtotal:</span>
                       <span>{formatCurrency(calculateTotal())}</span>
@@ -329,35 +339,35 @@ export default function OrderingPage() {
                       <span>{formatCurrency(calculateTotal() * 0.08)}</span>
                     </div>
                     <Separator />
-                    <div className="flex justify-between font-bold text-lg">
+                    <div className="flex justify-between font-bold text-xl">
                       <span>Total:</span>
-                      <span>{formatCurrency(calculateTotal() * 1.08)}</span>
+                      <span className="text-blue-600">{formatCurrency(calculateTotal() * 1.08)}</span>
                     </div>
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <Button
                       onClick={handleCheckout}
-                      className="w-full h-12 text-lg font-semibold"
+                      className="w-full h-14 text-lg font-semibold bg-blue-600 hover:bg-blue-700 touch-manipulation active:scale-98 transition-all"
                       disabled={createOrderMutation.isPending}
                     >
                       <CreditCard className="w-5 h-5 mr-2" />
-                      {createOrderMutation.isPending ? "Processing..." : "Place Order"}
+                      {createOrderMutation.isPending ? "Processing..." : "Process Payment"}
                     </Button>
                     <Button
                       onClick={clearCart}
                       variant="outline"
-                      className="w-full"
+                      className="w-full h-12 touch-manipulation border-red-200 text-red-600 hover:bg-red-50"
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      Clear Cart
+                      Clear Order
                     </Button>
                   </div>
                 </>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>

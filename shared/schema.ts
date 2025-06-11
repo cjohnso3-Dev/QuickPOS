@@ -51,6 +51,10 @@ export const products = pgTable("products", {
   hasSizes: boolean("has_sizes").default(false),
   allowModifications: boolean("allow_modifications").default(true),
   modificationOptions: json("modification_options"), // JSON array of modification options
+  itemType: varchar("item_type", { length: 20 }).notNull().default("product"), // product, service, digital
+  requiresInventory: boolean("requires_inventory").default(true), // false for services
+  taxable: boolean("taxable").default(true),
+  serviceDetails: json("service_details"), // duration, appointment required, etc.
   createdAt: timestamp("created_at").defaultNow(),
 });
 
