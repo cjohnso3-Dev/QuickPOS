@@ -1,4 +1,3 @@
-
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -139,7 +138,7 @@ export default function OrderingPage() {
   const calculateDiscountedTotal = () => {
     const subtotal = calculateTotal();
     if (!appliedDiscount) return subtotal;
-    
+
     if (appliedDiscount.type === 'percentage') {
       return subtotal * (1 - parseFloat(appliedDiscount.value) / 100);
     } else {
@@ -190,7 +189,7 @@ export default function OrderingPage() {
     }
 
     const compValue = parseFloat(compAmount) || calculateTotal();
-    
+
     const compDiscount: Discount = {
       id: -1,
       name: `Comp: ${compReason}`,
@@ -204,7 +203,7 @@ export default function OrderingPage() {
     setAppliedDiscount(compDiscount);
     setCompReason("");
     setCompAmount("");
-    
+
     toast({
       title: "Order comped",
       description: `Order has been comped: ${compReason}`,
@@ -779,7 +778,7 @@ export default function OrderingPage() {
               Manager Functions
             </DialogTitle>
           </DialogHeader>
-          
+
           {!isManagerAuthorized ? (
             <div className="space-y-4">
               <div className="text-center py-4">
@@ -830,7 +829,7 @@ export default function OrderingPage() {
               <TabsContent value="discounts" className="space-y-4">
                 <div className="space-y-3">
                   <h4 className="font-medium text-lg">Apply Discount</h4>
-                  
+
                   {appliedDiscount && (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                       <div className="flex justify-between items-center">
@@ -853,7 +852,7 @@ export default function OrderingPage() {
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
                     {discounts.map((discount) => (
                       <Button
@@ -872,7 +871,8 @@ export default function OrderingPage() {
                           </div>
                         </div>
                         <Percent className="w-4 h-4" />
-                      </Button>
+                      </```python
+                      Button>
                     ))}
                   </div>
                 </div>
@@ -881,7 +881,7 @@ export default function OrderingPage() {
               <TabsContent value="comp" className="space-y-4">
                 <div className="space-y-4">
                   <h4 className="font-medium text-lg">Comp Order</h4>
-                  
+
                   <div className="space-y-3">
                     <div>
                       <Label className="text-sm font-medium">Comp Reason (Required)</Label>
@@ -892,7 +892,7 @@ export default function OrderingPage() {
                         maxLength={100}
                       />
                     </div>
-                    
+
                     <div>
                       <Label className="text-sm font-medium">Comp Amount (Leave blank for full comp)</Label>
                       <VirtualKeyboard
@@ -903,7 +903,7 @@ export default function OrderingPage() {
                         maxLength={10}
                       />
                     </div>
-                    
+
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                       <p className="text-sm text-yellow-800">
                         {compAmount 
@@ -911,7 +911,7 @@ export default function OrderingPage() {
                           : `Full order comp: ${formatCurrency(calculateTotal())}`}
                       </p>
                     </div>
-                    
+
                     <Button
                       onClick={handleCompOrder}
                       className="w-full h-12 bg-yellow-600 hover:bg-yellow-700"
@@ -927,7 +927,7 @@ export default function OrderingPage() {
               <TabsContent value="override" className="space-y-4">
                 <div className="space-y-4">
                   <h4 className="font-medium text-lg">Manager Overrides</h4>
-                  
+
                   <div className="grid grid-cols-1 gap-3">
                     <Button
                       variant="outline"
@@ -942,7 +942,7 @@ export default function OrderingPage() {
                       <DollarSign className="w-4 h-4 mr-2" />
                       Price Override
                     </Button>
-                    
+
                     <Button
                       variant="outline"
                       className="justify-start h-12 p-3"
@@ -957,7 +957,7 @@ export default function OrderingPage() {
                       Tax Override
                     </Button>
                   </div>
-                  
+
                   <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded">
                     <p>Additional manager functions can be added here such as:</p>
                     <ul className="list-disc list-inside mt-1 space-y-1">
@@ -971,7 +971,7 @@ export default function OrderingPage() {
               </TabsContent>
             </Tabs>
           )}
-          
+
           <div className="flex justify-end mt-4">
             <Button
               onClick={closeManagerInterface}

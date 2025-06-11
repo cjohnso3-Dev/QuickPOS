@@ -102,9 +102,9 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
 
   return (
     <>
-      <Card className="group hover:shadow-lg transition-all duration-200 border-2 hover:border-blue-200 touch-manipulation">
-        <CardContent className="p-3 sm:p-4">
-          <div className="space-y-3">
+      <Card className="group hover:shadow-lg transition-all duration-200 border-2 hover:border-blue-200 touch-manipulation h-full">
+        <CardContent className="p-3 h-full flex flex-col">
+          <div className="space-y-3 flex-1">
             {/* Product Image with Overlaid Badges */}
             {product.imageUrl && (
               <div className="relative aspect-square rounded-lg overflow-hidden bg-gray-100">
@@ -200,18 +200,17 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
             )}
 
             {/* Action Buttons - Touch Optimized */}
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2 pt-2 mt-auto">
               {sizeOptions.length === 0 && (
                 <Button
                   onClick={() => handleQuickAdd()}
-                  className="flex-1 h-14 sm:h-12 text-base sm:text-lg font-semibold touch-manipulation active:scale-95 transition-transform"
+                  className="flex-1 h-12 text-sm font-semibold touch-manipulation active:scale-95 transition-transform"
                   disabled={product.requiresInventory && product.stock === 0}
                 >
-                  <Plus className="w-5 h-5 mr-2" />
-                  <span className="hidden xs:inline">
-                    {product.itemType === "service" ? "Book " : "Quick "}
+                  <Plus className="w-4 h-4 mr-1" />
+                  <span className="truncate">
+                    {product.itemType === "service" ? "Book" : "Add"}
                   </span>
-                  {product.itemType === "service" ? "Service" : "Add"}
                 </Button>
               )}
               
@@ -219,12 +218,12 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                 <Button
                   onClick={handleCustomizeClick}
                   variant="outline"
-                  className={`h-14 sm:h-12 px-3 sm:px-4 touch-manipulation active:scale-95 transition-transform ${sizeOptions.length > 0 ? 'flex-1' : ''}`}
+                  className={`h-12 px-3 touch-manipulation active:scale-95 transition-transform ${sizeOptions.length > 0 ? 'flex-1' : ''}`}
                   disabled={product.stock === 0}
                 >
-                  <Settings className="w-5 h-5" />
-                  <span className="hidden sm:inline ml-1">
-                    {sizeOptions.length > 0 ? "Customize" : "Modify"}
+                  <Settings className="w-4 h-4" />
+                  <span className="hidden sm:inline ml-1 truncate">
+                    {sizeOptions.length > 0 ? "Custom" : "Modify"}
                   </span>
                 </Button>
               )}
