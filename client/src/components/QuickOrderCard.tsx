@@ -1,11 +1,12 @@
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VirtualKeyboard } from "@/components/ui/virtual-keyboard";
-import { Plus, Settings, ShoppingCart, ChevronDown, ChevronUp } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Plus, Settings, ShoppingCart, ChevronDown } from "lucide-react";
 import type { ProductWithCategory, CartItem } from "@shared/schema";
 
 interface QuickOrderCardProps {
@@ -23,10 +24,10 @@ interface ProductModifier {
 
 export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: QuickOrderCardProps) {
   const [showModifiers, setShowModifiers] = useState(false);
-  const [showSizeOptions, setShowSizeOptions] = useState(false);
   const [selectedModifiers, setSelectedModifiers] = useState<ProductModifier[]>([]);
   const [selectedSize, setSelectedSize] = useState<ProductModifier | null>(null);
   const [specialInstructions, setSpecialInstructions] = useState("");
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const modificationOptions = (product.modificationOptions as ProductModifier[]) || [];
   const sizeOptions = modificationOptions.filter(mod => mod.category === 'size');
@@ -105,9 +106,12 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
 
   return (
     <>
-      <Card className={`relative overflow-hidden transition-all duration-200 ${
-        isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:scale-[1.02]'
-      } h-40 sm:h-44`}>
+      <Card 
+        ref={cardRef}
+        className={`relative transition-all duration-200 ${
+          isOutOfStock ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:shadow-lg hover:scale-[1.02]'
+        } h-40 sm:h-44`}
+      >
         <CardContent className="p-0 h-full flex flex-col">
           <div className="flex flex-1 min-h-0">
             {/* Product Image - Left Side */}
@@ -155,7 +159,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                 </p>
                 
                 {/* Stock Info */}
-                <p className="text-xs text-gray-500 mb-2">
+                <p className="text-xs text-gray-500">
                   {product.stock} available
                 </p>
               </div>
@@ -163,70 +167,67 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
           </div>
 
           {/* Action Buttons - Bottom */}
-          <div className="px-2 pb-2 sm:px-3 sm:pb-3">
+          <div className="px-2 pb-2 sm:px-3 sm:pb-3 border-t border-gray-100 pt-2 mt-2">
             {!isOutOfStock && (
-              <>
-                <div className="flex gap-1.5 mb-2">
+              <div className="flex gap-1.5">
+                {sizeOptions.length === 0 ? (
                   <Button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (sizeOptions.length === 0) {
-                        onQuickAdd(product);
-                      } else {
-                        setShowSizeOptions(!showSizeOptions);
-                      }
+                      onQuickAdd(product);
                     }}
                     className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-9 text-sm font-semibold"
                     size="sm"
                   >
                     <Plus className="w-4 h-4 mr-1" />
-                    {sizeOptions.length === 0 ? 'Add' : 'Quick Add'}
-                    {sizeOptions.length > 0 && (
-                      showSizeOptions ? <ChevronUp className="w-4 h-4 ml-1" /> : <ChevronDown className="w-4 h-4 ml-1" />
-                    )}
+                    Add
                   </Button>
-                  
-                  {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCustomizeClick();
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="flex-shrink-0 h-9 px-3 hover:bg-gray-50"
-                    >
-                      <Settings className="w-4 h-4" />
-                    </Button>
-                  )}
-                </div>
-
-                {/* Size Options Dropdown */}
-                {showSizeOptions && sizeOptions.length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-2 border">
-                    <p className="text-xs font-medium text-gray-700 mb-2">Select Size:</p>
-                    <div className="grid grid-cols-1 gap-1">
+                ) : (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-9 text-sm font-semibold"
+                        size="sm"
+                      >
+                        <Plus className="w-4 h-4 mr-1" />
+                        Quick Add
+                        <ChevronDown className="w-4 h-4 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
                       {sizeOptions.map((size) => (
-                        <Button
+                        <DropdownMenuItem
                           key={size.id}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleQuickAdd(size);
                           }}
-                          variant="outline"
-                          size="sm"
-                          className="justify-between h-8 text-xs hover:bg-white"
+                          className="flex justify-between cursor-pointer"
                         >
                           <span>{size.name}</span>
                           <span className="text-gray-500">
                             {size.price > 0 ? `+${formatCurrency(size.price)}` : ''}
                           </span>
-                        </Button>
+                        </DropdownMenuItem>
                       ))}
-                    </div>
-                  </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
-              </>
+                
+                {(modificationOptions.length > 0 || product.description?.includes('customizable')) && (
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCustomizeClick();
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="flex-shrink-0 h-9 px-3 hover:bg-gray-50"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         </CardContent>
