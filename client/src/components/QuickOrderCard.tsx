@@ -183,7 +183,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                         <Button
                           onClick={() => {
                             setSelectedSize(size);
-                            handleCustomizeClick();
+                            setShowModifiers(true);
                           }}
                           variant="outline"
                           className="w-12 h-12 p-0 touch-manipulation active:scale-95 transition-transform rounded-none border-0 border-l border-gray-300"
@@ -242,8 +242,8 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
           </DialogHeader>
           
           <div className="space-y-6 touch-manipulation">
-            {/* Size Selection - Only show if coming from customize button */}
-            {sizeOptions.length > 0 && (
+            {/* Size Selection - Only show if size not pre-selected */}
+            {sizeOptions.length > 0 && !selectedSize && (
               <div className="space-y-3">
                 <h4 className="font-medium text-lg sm:text-xl">Size (required)</h4>
                 <div className="grid grid-cols-1 gap-3">
@@ -260,6 +260,21 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                       </span>
                     </Button>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Show selected size when pre-selected */}
+            {selectedSize && (
+              <div className="space-y-3">
+                <h4 className="font-medium text-lg sm:text-xl">Selected Size</h4>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium text-blue-900">{selectedSize.name}</span>
+                    <span className="font-semibold text-blue-900">
+                      {formatPrice(parseFloat(product.price) + selectedSize.price)}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
