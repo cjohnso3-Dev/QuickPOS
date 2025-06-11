@@ -48,9 +48,22 @@ export const products = pgTable("products", {
   minStock: integer("min_stock").default(5),
   maxStock: integer("max_stock").default(100),
   isActive: boolean("is_active").default(true),
+  hasSizes: boolean("has_sizes").default(false),
   allowModifications: boolean("allow_modifications").default(true),
   modificationOptions: json("modification_options"), // JSON array of modification options
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const productSizes = pgTable("product_sizes", {
+  id: serial("id").primaryKey(),
+  productId: integer("product_id").references(() => products.id, { onDelete: "cascade" }).notNull(),
+  sizeName: varchar("size_name", { length: 50 }).notNull(), // sm, med, large
+  sizeLabel: varchar("size_label", { length: 100 }).notNull(), // Small, Medium, Large
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  priceModifier: decimal("price_modifier", { precision: 10, scale: 2 }).default("0.00"), // +/- from base price
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").default(true),
 });
 
 export const orders = pgTable("orders", {
@@ -144,6 +157,7 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true, creat
 export const insertTimeClockSchema = createInsertSchema(timeClocks).omit({ id: true, createdAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertProductSchema = createInsertSchema(products).omit({ id: true, createdAt: true });
+export const insertProductSizeSchema = createInsertSchema(productSizes).omit({ id: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: true });
 export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, createdAt: true });
@@ -157,6 +171,7 @@ export type User = typeof users.$inferSelect;
 export type TimeClock = typeof timeClocks.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Product = typeof products.$inferSelect;
+export type ProductSize = typeof productSizes.$inferSelect;
 export type Order = typeof orders.$inferSelect;
 export type OrderItem = typeof orderItems.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
@@ -169,6 +184,7 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertTimeClock = z.infer<typeof insertTimeClockSchema>;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type InsertProductSize = z.infer<typeof insertProductSizeSchema>;
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
