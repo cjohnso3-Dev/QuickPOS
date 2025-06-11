@@ -59,7 +59,7 @@ export default function OrderingPage() {
         !item.modifications?.length && 
         !item.specialInstructions
       );
-      
+
       if (existing) {
         return prev.map(item =>
           item.product.id === product.id && !item.modifications?.length && !item.specialInstructions
