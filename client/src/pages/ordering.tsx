@@ -59,7 +59,7 @@ export default function OrderingPage() {
         !item.modifications?.length && 
         !item.specialInstructions
       );
-      
+
       if (existing) {
         return prev.map(item =>
           item.product.id === product.id && !item.modifications?.length && !item.specialInstructions
@@ -151,6 +151,68 @@ export default function OrderingPage() {
     : products;
 
   const activeProducts = filteredProducts.filter(product => product.isActive && product.stock > 0);
+  
+  const handleQuickAdd = (product: ProductWithCategory) => {
+    const cartItem: CartItemType = {
+      product,
+      quantity: 1,
+      modifications: [],
+      unitPrice: parseFloat(product.price),
+      totalPrice: parseFloat(product.price),
+      specialInstructions: "",
+    };
+
+    setCart(prev => {
+      const existing = prev.find(item => 
+        item.product.id === product.id && 
+        !item.modifications?.length &&
+        !item.specialInstructions
+      );
+
+      if (existing) {
+        return prev.map(item =>
+          item.product.id === product.id && !item.modifications?.length && !item.specialInstructions
+            ? { ...item, quantity: item.quantity + 1, totalPrice: item.unitPrice * (item.quantity + 1) }
+            : item
+        );
+      }
+
+      return [...prev, cartItem];
+    });
+
+    toast({
+      title: "Added to cart",
+      description: `${product.name} has been added to your cart.`,
+    });
+  };
+
+  const handleCustomAdd = (cartItem: CartItemType) => {
+    setCart(prev => {
+      const existing = prev.find(item => 
+        item.product.id === cartItem.product.id &&
+        JSON.stringify(item.modifications) === JSON.stringify(cartItem.modifications) &&
+        item.specialInstructions === cartItem.specialInstructions
+      );
+
+      if (existing) {
+        return prev.map(item =>
+          item.product.id === cartItem.product.id &&
+          JSON.stringify(item.modifications) === JSON.stringify(cartItem.modifications) &&
+          item.specialInstructions === cartItem.specialInstructions
+            ? { ...item, quantity: item.quantity + cartItem.quantity, totalPrice: item.unitPrice * (item.quantity + cartItem.quantity) }
+            : item
+        );
+      }
+
+      return [...prev, cartItem];
+    });
+
+    toast({
+      title: "Added to cart",
+      description: `Customized ${cartItem.product.name} has been added to your cart.`,
+    });
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -206,8 +268,8 @@ export default function OrderingPage() {
                   <QuickOrderCard
                     key={product.id}
                     product={product}
-                    onQuickAdd={addToCart}
-                    onCustomAdd={addCustomItemToCart}
+                    onQuickAdd={handleQuickAdd}
+                    onCustomAdd={handleCustomAdd}
                   />
                 ))}
               </div>

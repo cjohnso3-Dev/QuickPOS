@@ -236,16 +236,12 @@ export class MemStorage implements IStorage {
         taxable: true,
         serviceDetails: null,
         modificationOptions: [
-          { id: "size", name: "Size", options: [
-            { name: "Small", price: 0 },
-            { name: "Medium", price: 0.50 },
-            { name: "Large", price: 1.00 }
-          ]},
-          { id: "milk", name: "Milk", options: [
-            { name: "Regular", price: 0 },
-            { name: "Oat Milk", price: 0.75 },
-            { name: "Almond Milk", price: 0.75 }
-          ]}
+          { id: "size-small", name: "Small", category: "size", price: 0 },
+          { id: "size-medium", name: "Medium", category: "size", price: 0.50 },
+          { id: "size-large", name: "Large", category: "size", price: 1.00 },
+          { id: "milk-regular", name: "Regular Milk", category: "milk", price: 0 },
+          { id: "milk-oat", name: "Oat Milk", category: "milk", price: 0.75 },
+          { id: "milk-almond", name: "Almond Milk", category: "milk", price: 0.75 }
         ],
         createdAt: new Date()
       },
@@ -261,17 +257,18 @@ export class MemStorage implements IStorage {
         minStock: 8,
         maxStock: 30,
         isActive: true,
+        hasSizes: false,
         allowModifications: true,
+        itemType: "product",
+        requiresInventory: true,
+        taxable: true,
+        serviceDetails: null,
         modificationOptions: [
-          { id: "bread", name: "Bread", options: [
-            { name: "White", price: 0 },
-            { name: "Wheat", price: 0 },
-            { name: "Sourdough", price: 0.50 }
-          ]},
-          { id: "extras", name: "Extras", options: [
-            { name: "Extra Bacon", price: 2.00 },
-            { name: "Extra Cheese", price: 1.50 }
-          ]}
+          { id: "bread-white", name: "White Bread", category: "bread", price: 0 },
+          { id: "bread-wheat", name: "Wheat Bread", category: "bread", price: 0 },
+          { id: "bread-sourdough", name: "Sourdough", category: "bread", price: 0.50 },
+          { id: "extra-bacon", name: "Extra Bacon", category: "extras", price: 2.00 },
+          { id: "extra-cheese", name: "Extra Cheese", category: "extras", price: 1.50 }
         ],
         createdAt: new Date()
       }
