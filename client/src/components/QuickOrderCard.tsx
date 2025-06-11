@@ -116,7 +116,7 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
                 {/* Overlaid Badges */}
                 <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
                   {/* Price Badge */}
-                  <Badge variant="secondary" className="text-xs shadow-md bg-white/90 backdrop-blur-sm">
+                  <Badge variant="default" className="text-xs shadow-lg bg-slate-900/95 text-white font-semibold backdrop-blur-sm border-0">
                     {formatPrice(parseFloat(product.price))}
                   </Badge>
                   
