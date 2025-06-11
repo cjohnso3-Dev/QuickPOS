@@ -78,9 +78,9 @@ export class MemStorage implements IStorage {
   private initializeDefaultData() {
     // Create default categories
     const defaultCategories = [
-      { id: 1, name: "Beverages", description: "Hot and cold beverages" },
-      { id: 2, name: "Food", description: "Main food items" },
-      { id: 3, name: "Desserts", description: "Sweet treats and desserts" }
+      { id: 1, name: "Beverages", description: "Hot and cold beverages" as string | null },
+      { id: 2, name: "Food", description: "Main food items" as string | null },
+      { id: 3, name: "Desserts", description: "Sweet treats and desserts" as string | null }
     ];
     
     defaultCategories.forEach(cat => {
@@ -88,7 +88,7 @@ export class MemStorage implements IStorage {
     });
 
     // Create default products
-    const defaultProducts = [
+    const defaultProducts: Product[] = [
       {
         id: 1,
         name: "Premium Coffee",
@@ -200,7 +200,11 @@ export class MemStorage implements IStorage {
 
   async createCategory(category: InsertCategory): Promise<Category> {
     const id = this.currentId++;
-    const newCategory: Category = { ...category, id };
+    const newCategory: Category = { 
+      id, 
+      name: category.name, 
+      description: category.description || null 
+    };
     this.categories.set(id, newCategory);
     return newCategory;
   }
@@ -226,8 +230,17 @@ export class MemStorage implements IStorage {
   async createProduct(product: InsertProduct): Promise<Product> {
     const id = this.currentId++;
     const newProduct: Product = { 
-      ...product, 
       id, 
+      name: product.name,
+      description: product.description || null,
+      price: product.price,
+      categoryId: product.categoryId || null,
+      imageUrl: product.imageUrl || null,
+      sku: product.sku,
+      stock: product.stock || 0,
+      minStock: product.minStock || null,
+      maxStock: product.maxStock || null,
+      isActive: product.isActive || null,
       createdAt: new Date()
     };
     this.products.set(id, newProduct);
@@ -281,8 +294,13 @@ export class MemStorage implements IStorage {
   async createOrder(order: InsertOrder): Promise<Order> {
     const id = this.currentId++;
     const newOrder: Order = { 
-      ...order, 
-      id, 
+      id,
+      customerName: order.customerName || null,
+      subtotal: order.subtotal,
+      tax: order.tax,
+      total: order.total,
+      status: order.status || "pending",
+      paymentId: order.paymentId || null,
       createdAt: new Date()
     };
     this.orders.set(id, newOrder);
