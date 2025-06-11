@@ -376,7 +376,14 @@ export class MemStorage implements IStorage {
     const id = this.currentId++;
     const newUser: User = {
       id,
-      ...user,
+      username: user.username,
+      email: user.email || null,
+      passwordHash: user.passwordHash,
+      firstName: user.firstName || null,
+      lastName: user.lastName || null,
+      role: user.role || "employee",
+      isActive: user.isActive !== false,
+      hourlyRate: user.hourlyRate || null,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -505,7 +512,7 @@ export class MemStorage implements IStorage {
     return productsArray.map(product => ({
       ...product,
       category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
-      modifications: product.modificationOptions || []
+      modifications: (product.modificationOptions as any[]) || []
     }));
   }
 
@@ -516,7 +523,7 @@ export class MemStorage implements IStorage {
     return {
       ...product,
       category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
-      modifications: product.modificationOptions || []
+      modifications: (product.modificationOptions as any[]) || []
     };
   }
 
@@ -717,7 +724,14 @@ export class MemStorage implements IStorage {
     const id = this.currentId++;
     const newPayment: Payment = {
       id,
-      ...payment,
+      orderId: payment.orderId,
+      paymentMethod: payment.paymentMethod,
+      amount: payment.amount,
+      stripePaymentId: payment.stripePaymentId || null,
+      cashReceived: payment.cashReceived || null,
+      changeGiven: payment.changeGiven || null,
+      status: payment.status || "completed",
+      processedBy: payment.processedBy || null,
       createdAt: new Date()
     };
     this.payments.set(id, newPayment);
@@ -760,7 +774,11 @@ export class MemStorage implements IStorage {
     const id = this.currentId++;
     const newDiscount: Discount = {
       id,
-      ...discount,
+      name: discount.name,
+      type: discount.type,
+      value: discount.value,
+      isActive: discount.isActive !== false,
+      requiresManager: discount.requiresManager || false,
       createdAt: new Date()
     };
     this.discounts.set(id, newDiscount);
@@ -795,7 +813,10 @@ export class MemStorage implements IStorage {
     const id = this.currentId++;
     const newTaxRate: TaxRate = {
       id,
-      ...taxRate
+      name: taxRate.name,
+      rate: taxRate.rate,
+      isDefault: taxRate.isDefault || false,
+      isActive: taxRate.isActive !== false
     };
     this.taxRates.set(id, newTaxRate);
     return newTaxRate;
@@ -815,7 +836,13 @@ export class MemStorage implements IStorage {
     const id = this.currentId++;
     const newLog: AuditLog = {
       id,
-      ...log,
+      userId: log.userId || null,
+      action: log.action,
+      entityType: log.entityType,
+      entityId: log.entityId || null,
+      oldValues: log.oldValues || null,
+      newValues: log.newValues || null,
+      reason: log.reason || null,
       createdAt: new Date()
     };
     this.auditLogs.set(id, newLog);
@@ -833,7 +860,7 @@ export class MemStorage implements IStorage {
       logs = logs.filter(log => log.entityId === entityId);
     }
     
-    return logs.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return logs.sort((a, b) => (b.createdAt || new Date()).getTime() - (a.createdAt || new Date()).getTime());
   }
 
   // Settings methods
