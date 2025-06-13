@@ -40,7 +40,8 @@ import CartItemEditor from "@/components/CartItemEditor";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { queryClient } from "@/lib/queryClient";
-import type { ProductWithCategory, Category, CartItem as CartItemType, TipOption, PaymentSplit, Discount } from "@shared/schema";
+import type { ProductWithCategory, Category, CartItem as CartItemType, TipOption, PaymentSplit, Discount, OrderWithDetails, InsertOrder, Order, Setting, InsertOrderApiPayload } from "@shared/schema"; // Added InsertOrderApiPayload
+import { CheckoutDialog } from "@/components/CheckoutDialog"; // Import CheckoutDialog
 
 export default function OrderingPage() {
   const [cart, setCart] = useState<CartItemType[]>([]);
@@ -55,6 +56,8 @@ export default function OrderingPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isOrderPanelCollapsed, setIsOrderPanelCollapsed] = useState(false);
+  const [showHeldOrdersDialog, setShowHeldOrdersDialog] = useState(false);
+  const [currentOrderForCheckout, setCurrentOrderForCheckout] = useState<OrderWithDetails | Omit<InsertOrderApiPayload, 'items'> | null>(null);
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
@@ -71,25 +74,111 @@ export default function OrderingPage() {
     enabled: isManagerAuthorized,
   });
 
-  const createOrderMutation = useMutation({
-    mutationFn: async (orderData: any) => {
+  const { data: settings = [] } = useQuery<Setting[]>({
+    queryKey: ["/api/settings"],
+    queryFn: async () => {
+      const response = await fetch("/api/settings?category=orders"); // Fetch only order-related settings
+      if (!response.ok) throw new Error("Failed to fetch settings");
+      return response.json();
+    }
+  });
+
+  const heldOrdersRequireManagerSetting = settings.find(s => s.key === 'held_orders_require_manager');
+  const doesHeldOrderRequireManager = heldOrdersRequireManagerSetting?.value === 'true';
+
+
+  const { data: heldOrders = [], isLoading: heldOrdersLoading } = useQuery<OrderWithDetails[]>({
+    queryKey: ["/api/orders/held"],
+    queryFn: async () => {
+      const response = await fetch("/api/orders?status=HELD");
+      if (!response.ok) throw new Error("Failed to fetch held orders");
+      return response.json();
+    },
+    // Enable if manager is authorized OR if the setting doesn't require manager
+    enabled: doesHeldOrderRequireManager ? isManagerAuthorized : true,
+  });
+
+  const updateOrderStatusMutation = useMutation({
+    mutationFn: async ({ orderId, status, managedBy }: { orderId: number; status: string; managedBy?: number }) => {
+      const response = await fetch(`/api/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, managedBy }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to update order status" }));
+        throw new Error(errorData.message || "Failed to update order status");
+      }
+      return response.json();
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: "Order Status Updated",
+        description: `Order ${data.orderNumber} status changed to ${variables.status}.`,
+      });
+      // Always invalidate to refetch from server, ensuring consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/held"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders", variables.orderId] });
+
+      // If an order was cancelled, also update the client-side state for immediate UI feedback
+      // This is an optimistic update of sorts before the query refetches.
+      if (variables.status === 'CANCELLED') {
+        queryClient.setQueryData<OrderWithDetails[]>(["/api/orders/held"], (oldData) => {
+          return oldData ? oldData.filter(order => order.id !== variables.orderId) : [];
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Status Update Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const createOrderMutation = useMutation<Order, Error, Omit<InsertOrderApiPayload, 'items'>>({ // items will be handled separately, use InsertOrderApiPayload
+    mutationFn: async (orderData: Omit<InsertOrderApiPayload, 'items'>) => { // Use InsertOrderApiPayload
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(orderData),
       });
-      if (!response.ok) throw new Error("Failed to create order");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to create order" }));
+        throw new Error(errorData.message || "Failed to create order");
+      }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => { // data is the created Order from server, which now includes the server-generated orderNumber
       toast({
-        title: "Order placed successfully!",
-        description: "Your order has been processed.",
+        title: data.status === 'HELD' ? "Order Held!" : "Order Placed!", // Use data.status for consistency
+        description: `Order ${data.orderNumber} has been ${data.status === 'HELD' ? 'held' : 'processed'}.`, // Use data.orderNumber and data.status
       });
-      setCart([]);
+
+      if (data.status !== 'HELD') { // Only clear cart and reset for non-HELD orders here
+        setCart([]);
+        setCustomerName("Walk-in Customer");
+        setAppliedDiscount(null);
+        setTipAmount(0);
+      }
+      
+      // If order is placed (not just held), and we intend to proceed to payment,
+      // we might want to store the new order's ID to pass to the checkout modal.
+      if (data.status !== 'HELD' && data.id && data.status !== 'COMPLETED') {
+        // If it was a "Proceed to Payment" click that created a PENDING_PAYMENT order
+        // We might want to open checkout here, or rely on the button's setShowCheckout(true)
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/held"] });
+
+      if (data.status === 'COMPLETED') {
+        setShowCheckout(false); // Close checkout dialog on successful finalization
+        setCurrentOrderForCheckout(null); // Clear the order context
+      }
+      // For HELD orders, setCurrentOrderForCheckout will be handled in the specific mutate call's onSuccess
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Order failed",
         description: "There was an error processing your order.",
@@ -98,24 +187,191 @@ export default function OrderingPage() {
     },
   });
 
+  // Placeholder for createOrderItemMutation
+  const createOrderItemMutation = useMutation({
+    mutationFn: async (orderItemData: { orderId: number; productId: number; quantity: number; unitPrice: string; totalPrice: string; modifications?: any[]; specialInstructions?: string; }) => {
+      // This endpoint needs to be created on the backend
+      const response = await fetch(`/api/order-items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderItemData),
+      });
+      if (!response.ok) throw new Error("Failed to create order item");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // console.log("Order item created:", data);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to add item to order",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+
   const [showCheckout, setShowCheckout] = useState(false);
   const [showCartEditor, setShowCartEditor] = useState(false);
   const [editingCartItem, setEditingCartItem] = useState<CartItemType | null>(null);
   const [tipAmount, setTipAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'split'>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'split'>('card'); // Default to card for checkout
   const [cashReceived, setCashReceived] = useState("");
   const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([]);
-  const [splitAmount1, setSplitAmount1] = useState("");
-  const [splitAmount2, setSplitAmount2] = useState("");
   const printReceiptRef = useRef<() => void>();
+  const [processingPayment, setProcessingPayment] = useState(false);
 
-  const updateCartQuantity = (productId: number, quantity: number) => {
-    if (quantity === 0) {
-      setCart(prev => prev.filter((_, index) => 
-        !(prev[index].product.id === productId)
-      ));
+
+  const handleProceedToPayment = () => {
+    // const orderNumber = `ORD-${Date.now().toString().slice(-8)}`; // No longer generate here
+    const subtotal = calculateDiscountedTotal();
+    const taxAmount = subtotal * 0.08;
+    // Tip will be added in CheckoutDialog, so total here is pre-tip
+    const totalPreTip = subtotal + taxAmount;
+
+      // This object is for the CheckoutDialog's context and display, and for the mutation.
+      // It should match the type Omit<InsertOrderApiPayload, 'items'> which createOrderMutation expects.
+      const orderDataForCheckoutDialogAndMutation: Omit<InsertOrderApiPayload, 'items'> = {
+        customerName,
+        orderType: "takeout",
+        subtotal: subtotal.toString(),
+        tax: taxAmount.toString(),
+        tipAmount: "0", // Tip is handled in checkout dialog, this is for the order record
+        discountAmount: (calculateTotal() - subtotal).toString(),
+        total: totalPreTip.toString(), // This is pre-tip total for the order record
+        status: 'PENDING_PAYMENT', // Status before actual payment attempt
+        // createdBy and managedBy can be added here or in handlePaymentSuccess if needed from auth context
+      };
+      setCurrentOrderForCheckout(orderDataForCheckoutDialogAndMutation);
+    setShowCheckout(true);
+  };
+
+  const handlePaymentSuccess = (paymentDetails: {
+    paymentMethod: 'cash' | 'card' | 'split';
+    tipAmount: number;
+    totalAmount: number; // This is the grand total including tip
+    cashReceived?: number;
+    changeGiven?: number;
+    stripePaymentId?: string;
+    splits?: PaymentSplit[];
+  }) => {
+    if (!currentOrderForCheckout) {
+      toast({ title: "Error", description: "No order context for payment.", variant: "destructive" });
+      setProcessingPayment(false);
+      return;
+    }
+    setProcessingPayment(true);
+
+    let orderDataForMutation: Omit<InsertOrderApiPayload, 'items'>; // Use InsertOrderApiPayload
+    // Dummy user ID, replace with actual authenticated user ID
+    const currentUserId = users.find(u => u.role === 'employee')?.id ?? users.find(u => u.role === 'manager')?.id ?? 1;
+
+
+    if ('id' in currentOrderForCheckout && currentOrderForCheckout.id && 'orderNumber' in currentOrderForCheckout && currentOrderForCheckout.orderNumber) {
+      // This case means we are completing an existing HELD order that already has an orderNumber from the server.
+      // We need to ensure we pass this existing orderNumber if we are updating the order to COMPLETED.
+      // However, the createOrderMutation is for creating new orders or finalizing PENDING_PAYMENT orders
+      // that don't yet have a server-side ID.
+      // For updating a HELD order to COMPLETED, we should ideally use an updateOrderMutation.
+      // For now, if it's a HELD order being completed, we'll prepare data for createOrder,
+      // but the server's createOrder will generate a *new* orderNumber. This is not ideal for "completing"
+      // a HELD order by its original number. This part needs rethinking if we want to preserve orderNumber
+      // when moving from HELD to COMPLETED via this flow.
+      // The current setup implies that "Proceed to Payment" from a loaded HELD order effectively creates a new COMPLETED order.
+
+      const existingOrder = currentOrderForCheckout as OrderWithDetails; // It has an ID and orderNumber
+      const currentSubtotal = calculateDiscountedTotal();
+      const currentTax = currentSubtotal * 0.08;
+      const currentDiscountAmount = (calculateTotal() - currentSubtotal);
+      
+      // This path will create a NEW order record with a NEW order number.
+      // If the intent was to update the HELD order to COMPLETED, this is incorrect.
+      // We are sending data that looks like a new order, minus the orderNumber.
+      orderDataForMutation = {
+        // orderNumber: existingOrder.orderNumber, // DO NOT SEND - server generates
+        customerName: existingOrder.customerName || "Walk-in Customer",
+        customerPhone: existingOrder.customerPhone,
+        customerEmail: existingOrder.customerEmail,
+        orderType: existingOrder.orderType,
+        tableNumber: existingOrder.tableNumber,
+        notes: existingOrder.notes,
+        subtotal: currentSubtotal.toString(),
+        tax: currentTax.toString(),
+        discountAmount: currentDiscountAmount.toString(),
+        tipAmount: paymentDetails.tipAmount.toString(),
+        total: paymentDetails.totalAmount.toString(),
+        status: 'COMPLETED',
+        createdBy: existingOrder.createdByUser?.id ?? (typeof existingOrder.createdBy === 'number' ? existingOrder.createdBy : currentUserId),
+        managedBy: existingOrder.managedByUser?.id ?? (typeof existingOrder.managedBy === 'number' ? existingOrder.managedBy : (isManagerAuthorized ? currentUserId : undefined)),
+      };
+
     } else {
-      setCart(prev => prev.map((item, index) =>
+       // This is for a new order (not previously HELD) or a PENDING_PAYMENT order from handleProceedToPayment
+       // currentOrderForCheckout should be of type Omit<InsertOrderApiPayload, 'items'> here
+       const newOrderDraft = currentOrderForCheckout as Omit<InsertOrderApiPayload, 'items'>;
+       orderDataForMutation = {
+        customerName: newOrderDraft.customerName,
+        orderType: newOrderDraft.orderType,
+        subtotal: newOrderDraft.subtotal,
+        tax: newOrderDraft.tax,
+        discountAmount: newOrderDraft.discountAmount,
+        tipAmount: paymentDetails.tipAmount.toString(),
+        total: paymentDetails.totalAmount.toString(),
+        status: 'COMPLETED',
+        createdBy: currentUserId, // Current user creates this new order
+        managedBy: isManagerAuthorized ? currentUserId : undefined, // Current manager if authorized
+      };
+    }
+    
+    createOrderMutation.mutate(orderDataForMutation, {
+      onSuccess: (createdOrder) => {
+        if (createdOrder && createdOrder.id) {
+          // Persist the full order details (including server-generated orderNumber)
+          const fullOrderContext = { ...createdOrder, items: cart.map(ci => ({...ci.product, quantity: ci.quantity, unitPrice: ci.unitPrice.toString(), totalPrice: ci.totalPrice.toString(), modifications: ci.modifications, specialInstructions: ci.specialInstructions })) };
+          setCurrentOrderForCheckout(fullOrderContext as unknown as OrderWithDetails);
+
+
+          // Create order items associated with this newly created order
+          cart.forEach(cartItem => {
+            createOrderItemMutation.mutate({
+              orderId: createdOrder.id!,
+              productId: cartItem.product.id,
+              quantity: cartItem.quantity,
+              unitPrice: cartItem.unitPrice.toString(),
+              totalPrice: cartItem.totalPrice.toString(),
+              modifications: cartItem.modifications,
+              specialInstructions: cartItem.specialInstructions,
+            });
+          });
+          // Global onSuccess will handle toast and, if status is COMPLETED, cart clearing & UI reset.
+        }
+        setProcessingPayment(false);
+      },
+      onError: (error) => {
+        setProcessingPayment(false);
+        // Global onError of createOrderMutation handles toast
+        toast({
+          title: "Payment Finalization Failed",
+          description: error.message || "Could not finalize the order after payment.",
+          variant: "destructive",
+        });
+      }
+    });
+  };
+
+  const handlePaymentCancel = () => {
+    setShowCheckout(false);
+    setCurrentOrderForCheckout(null);
+    toast({ title: "Checkout Cancelled", description: "The payment process was cancelled."});
+  };
+
+  const updateCartQuantity = (product: ProductWithCategory, quantity: number) => {
+    const productId = product.id;
+    if (quantity === 0) {
+      setCart(prev => prev.filter(item => item.product.id !== productId));
+    } else {
+      setCart(prev => prev.map(item =>
         item.product.id === productId
           ? { ...item, quantity, totalPrice: quantity * item.unitPrice }
           : item
@@ -225,33 +481,85 @@ export default function OrderingPage() {
     }).format(amount);
   };
 
-  const handleCheckout = () => {
-    if (cart.length === 0) {
+  const handleCheckout = (status: 'HELD' | 'PENDING_PAYMENT' | 'COMPLETED') => {
+    if (cart.length === 0 && status !== 'PENDING_PAYMENT') { // Allow PENDING_PAYMENT to proceed to checkout dialog even if cart is empty (e.g. loading a held order)
       toast({
         title: "Cart is empty",
-        description: "Please add items to your cart before checkout.",
+        description: "Please add items to your cart.",
         variant: "destructive",
       });
       return;
     }
 
-    const orderData = {
-      customerName,
-      orderType: "takeout",
-      items: cart.map(item => ({
-        productId: item.product.id,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice.toString(),
-        totalPrice: item.totalPrice.toString(),
-        modifications: item.modifications || [],
-        specialInstructions: item.specialInstructions || ""
-      })),
-      subtotal: calculateTotal().toString(),
-      tax: (calculateTotal() * 0.08).toString(),
-      total: (calculateTotal() * 1.08).toString(),
-    };
+    // Dummy user ID, replace with actual authenticated user ID
+    const currentUserId = users.find(u => u.role === 'employee')?.id ?? users.find(u => u.role === 'manager')?.id ?? 1;
 
-    createOrderMutation.mutate(orderData);
+    if (status === 'PENDING_PAYMENT') {
+      // This case is now handled by handleProceedToPayment, which sets up currentOrderForCheckout
+      // and then shows the CheckoutDialog. The actual order creation happens in handlePaymentSuccess.
+      handleProceedToPayment();
+      return;
+    }
+    
+    // This part is now primarily for 'HELD' orders.
+    // 'COMPLETED' status is handled by handlePaymentSuccess.
+    if (status === 'HELD') {
+      // const orderNumber = `ORD-${Date.now().toString().slice(-8)}`; // No longer generate here
+      const subtotal = calculateDiscountedTotal();
+      const taxAmount = subtotal * 0.08;
+      const totalForHold = subtotal + taxAmount + tipAmount; // tipAmount is from state
+
+      const orderDataForHold: Omit<InsertOrderApiPayload, 'items' | 'orderNumber'> = { // orderNumber removed
+        // orderNumber, // Server will generate
+        customerName,
+        orderType: "takeout", // Or determine dynamically
+        subtotal: subtotal.toString(),
+        tax: taxAmount.toString(),
+        tipAmount: tipAmount.toString(),
+        discountAmount: (calculateTotal() - subtotal).toString(),
+        total: totalForHold.toString(),
+        status: 'HELD',
+        createdBy: currentUserId,
+        managedBy: isManagerAuthorized ? currentUserId : undefined,
+      };
+
+      createOrderMutation.mutate(orderDataForHold as Omit<InsertOrderApiPayload, 'items'>, {
+        onSuccess: (createdOrder) => {
+          if (createdOrder && createdOrder.id) {
+            // Persist the full order details for the HELD order
+            const fullHeldOrderContext = { ...createdOrder, items: cart.map(ci => ({...ci.product, quantity: ci.quantity, unitPrice: ci.unitPrice.toString(), totalPrice: ci.totalPrice.toString(), modifications: ci.modifications, specialInstructions: ci.specialInstructions })) };
+            setCurrentOrderForCheckout(fullHeldOrderContext as unknown as OrderWithDetails);
+
+            // Create order items for this HELD order
+            cart.forEach(cartItem => {
+              createOrderItemMutation.mutate({
+                orderId: createdOrder.id!,
+                productId: cartItem.product.id,
+                quantity: cartItem.quantity,
+                unitPrice: cartItem.unitPrice.toString(),
+                totalPrice: cartItem.totalPrice.toString(),
+                modifications: cartItem.modifications,
+                specialInstructions: cartItem.specialInstructions,
+              });
+            });
+            // After items are sent for creation, clear the cart for a new transaction
+            setCart([]);
+            setCustomerName("Walk-in Customer");
+            setAppliedDiscount(null);
+            setTipAmount(0);
+          }
+          // Global onSuccess of createOrderMutation will handle the toast.
+        },
+        onError: (error) => {
+           // Global onError of createOrderMutation will handle the toast
+           toast({
+            title: "Failed to Hold Order",
+            description: error.message || "Could not save the order on hold.",
+            variant: "destructive",
+          });
+        }
+      });
+    }
   };
 
   const filteredProducts = selectedCategory 
@@ -346,6 +654,133 @@ export default function OrderingPage() {
   const handleRemoveCartItem = (itemToRemove: CartItemType) => {
     setCart(prev => prev.filter(item => item.product.id !== itemToRemove.product.id));
   };
+
+  const actuallyLoadHeldOrder = (orderToLoad: OrderWithDetails) => {
+    const cartItemsFromHeldOrder = orderToLoad.items
+      .map(heldItem => {
+        // Find the full product details from the main products list
+        const fullProduct = products.find(p => p.id === heldItem.productId);
+        if (!fullProduct) {
+          console.warn(`Product with ID ${heldItem.productId} not found in current product list. Skipping item from held order.`);
+          return null; // Skip this item if the product doesn't exist anymore
+        }
+        return {
+          product: fullProduct, // Use the full ProductWithCategory object
+          quantity: heldItem.quantity,
+          unitPrice: parseFloat(heldItem.unitPrice),
+          totalPrice: parseFloat(heldItem.totalPrice),
+          modifications: (heldItem.modifications || []) as any[],
+          specialInstructions: heldItem.specialInstructions || "",
+        };
+      })
+      .filter(item => item !== null) as CartItemType[]; // Filter out any nulls (skipped items)
+
+    setCart(cartItemsFromHeldOrder);
+
+    setCustomerName(orderToLoad.customerName || "Walk-in Customer");
+
+    // When loading a held order, clear any currently applied discount in the UI.
+    // The financial impact of the original discount is already part of orderToLoad's totals.
+    setAppliedDiscount(null);
+
+    setTipAmount(parseFloat(orderToLoad.tipAmount || "0"));
+    setCurrentOrderForCheckout(orderToLoad); // Set the loaded order as the context for potential payment
+
+    toast({
+      title: "Order Loaded",
+      description: `Order ${orderToLoad.orderNumber} has been loaded into the cart.`,
+    });
+    setShowHeldOrdersDialog(false);
+
+    const managerUserId = users.find(u => u.role === 'manager')?.id ?? users.find(u => u.role === 'employee')?.id;
+    updateOrderStatusMutation.mutate({ orderId: orderToLoad.id, status: 'PROCESSING', managedBy: managerUserId });
+  };
+
+  const handleLoadHeldOrder = (orderToLoad: OrderWithDetails) => {
+    if (cart.length > 0) {
+      if (window.confirm("You have an active order. Do you want to put the current order on hold and load the selected one?")) {
+        // Hold current order first
+        // const currentOrderNumber = `ORD-${Date.now().toString().slice(-8)}`; // No longer generate here
+        const currentSubtotal = calculateDiscountedTotal();
+        const currentTaxAmount = currentSubtotal * 0.08;
+        const currentTotalForHold = currentSubtotal + currentTaxAmount + tipAmount;
+        const currentUserId = users.find(u => u.role === 'employee')?.id ?? users.find(u => u.role === 'manager')?.id ?? 1;
+
+        const currentOrderDataForHold: Omit<InsertOrderApiPayload, 'items' | 'orderNumber'> = { // orderNumber removed
+          // orderNumber: currentOrderNumber, // Server will generate
+          customerName,
+          orderType: "takeout",
+          subtotal: currentSubtotal.toString(),
+          tax: currentTaxAmount.toString(),
+          tipAmount: tipAmount.toString(),
+          discountAmount: (calculateTotal() - currentSubtotal).toString(),
+          total: currentTotalForHold.toString(),
+          status: 'HELD',
+          createdBy: currentUserId,
+          managedBy: isManagerAuthorized ? currentUserId : undefined,
+        };
+
+        createOrderMutation.mutate(currentOrderDataForHold as Omit<InsertOrderApiPayload, 'items'>, { // Cast to satisfy
+          onSuccess: (heldCurrentOrder) => {
+            if (heldCurrentOrder && heldCurrentOrder.id) {
+              // Items for the *current order being put on hold* need to be created.
+              // The `cart` at this point IS the current order's items.
+              const itemsToHold = [...cart]; // Capture cart before it's cleared by global or subsequent logic
+
+              itemsToHold.forEach(cartItem => {
+                createOrderItemMutation.mutate({
+                  orderId: heldCurrentOrder.id!, // Use the ID of the order just put on hold
+                  productId: cartItem.product.id,
+                  quantity: cartItem.quantity,
+                  unitPrice: cartItem.unitPrice.toString(),
+                  totalPrice: cartItem.totalPrice.toString(),
+                  modifications: cartItem.modifications,
+                  specialInstructions: cartItem.specialInstructions,
+                });
+              });
+              
+              // Clear cart and reset UI for the *newly loaded* order (which happens in actuallyLoadHeldOrder)
+              // The global onSuccess for createOrderMutation (for the HELD order) will show a toast.
+              // It will NOT clear the cart because status is 'HELD'.
+              // We need to clear the cart here because we are about to load a *different* order.
+              setCart([]);
+              setCustomerName("Walk-in Customer"); // Reset for the order to be loaded
+              setAppliedDiscount(null);
+              setTipAmount(0);
+
+              // Now, load the originally selected held order
+              actuallyLoadHeldOrder(orderToLoad);
+            } else {
+              // If holding the current order failed for some reason, still try to load the target order
+              // but maybe with a warning or after clearing the cart.
+              // For now, just proceed to load, which will clear the cart if it's not empty.
+              actuallyLoadHeldOrder(orderToLoad);
+            }
+          },
+          onError: (error) => {
+            toast({
+              title: "Failed to Hold Current Order",
+              description: `Could not hold the current order before loading. ${error.message}`,
+              variant: "destructive",
+            });
+          }
+        });
+      } else {
+        // User chose not to hold the current order
+        return;
+      }
+    } else {
+      // Cart is empty, just load the held order
+      actuallyLoadHeldOrder(orderToLoad);
+    }
+  };
+
+  // Dummy users data for managerId - replace with actual user context/auth
+  const users = [
+    { id: 1, name: "Admin User", role: "admin" },
+    { id: 2, name: "Manager User", role: "manager" },
+    { id: 3, name: "Employee User", role: "employee" },
+  ];
 
   return (
     <div className="h-screen bg-gray-100 flex overflow-hidden">
@@ -447,6 +882,32 @@ export default function OrderingPage() {
                 <Plus className="h-4 w-4 mr-1" />
                 Add Customer
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (doesHeldOrderRequireManager && !isManagerAuthorized) {
+                    toast({
+                      title: "Manager Access Required",
+                      description: "Please log in as a manager to view held orders.",
+                      variant: "destructive"
+                    });
+                    // Optionally, prompt for manager PIN here or direct to manager login
+                    // setShowManagerInterface(true);
+                  } else {
+                    setShowHeldOrdersDialog(true);
+                  }
+                }}
+                className="bg-yellow-500 text-white border-yellow-500 hover:bg-yellow-600 relative"
+              >
+                <Receipt className="h-4 w-4 mr-1" />
+                Held Orders
+                {heldOrders && heldOrders.length > 0 && (
+                  <Badge variant="destructive" className="absolute -top-2 -right-2 px-1.5 py-0.5 text-xs">
+                    {heldOrders.length}
+                  </Badge>
+                )}
+              </Button>
               <Button variant="outline" size="sm" className="bg-orange-500 text-white border-orange-500 hover:bg-orange-600">
                 Select Table
               </Button>
@@ -521,7 +982,11 @@ export default function OrderingPage() {
               <div className="flex items-center justify-between">
                 {!isOrderPanelCollapsed && (
                   <div className="flex items-center gap-2">
-                    <h2 className="font-semibold">Order #{new Date().getTime().toString().slice(-6)}</h2>
+                    <h2 className="font-semibold">
+                      Order #{currentOrderForCheckout && 'orderNumber' in currentOrderForCheckout && currentOrderForCheckout.orderNumber
+                                ? currentOrderForCheckout.orderNumber.replace('ORD-', '')
+                                : cart.length > 0 ? "New" : "----"}
+                    </h2>
                     <Badge variant="secondary">{cart.length}</Badge>
                   </div>
                 )}
@@ -538,19 +1003,20 @@ export default function OrderingPage() {
 
             {!isOrderPanelCollapsed && (
               <>
-                {/* Customer Info */}
-                <div className="p-4 border-b border-gray-200">
-                  <Input
-                    type="text"
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Customer name"
-                    className="text-sm"
-                  />
-                </div>
-
-                {/* Cart Items */}
+                {/* Scrollable Area for Customer Info and Cart Items */}
                 <div className="flex-1 overflow-y-auto">
+                  {/* Customer Info */}
+                  <div className="p-4 border-b border-gray-200">
+                    <Input
+                      type="text"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      placeholder="Customer name"
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {/* Cart Items List */}
                   {cart.length === 0 ? (
                     <div className="p-4 text-center text-gray-500">
                       <ShoppingCart className="h-8 w-8 mx-auto mb-2 text-gray-300" />
@@ -570,7 +1036,7 @@ export default function OrderingPage() {
                               {item.modifications && item.modifications.length > 0 && (
                                 <div className="mt-1">
                                   {item.modifications.map((mod, idx) => (
-                                    <p key={idx} className="text-xs text-gray-500">• {mod}</p>
+                                    <p key={idx} className="text-xs text-gray-500">• {typeof mod === 'object' && mod !== null && mod.name ? mod.name : mod}</p>
                                   ))}
                                 </div>
                               )}
@@ -581,7 +1047,7 @@ export default function OrderingPage() {
                                 <Input
                                   type="number"
                                   value={item.quantity}
-                                  onChange={(e) => updateCartQuantity(item.product.id, parseInt(e.target.value) || 0)}
+                                  onChange={(e) => updateCartQuantity(item.product, parseInt(e.target.value) || 0)}
                                   className="w-16 h-6 text-xs"
                                   min="0"
                                 />
@@ -609,6 +1075,7 @@ export default function OrderingPage() {
                     </div>
                   )}
                 </div>
+                {/* End Scrollable Area */}
 
                 {/* Order Summary */}
                 {cart.length > 0 && (
@@ -638,18 +1105,18 @@ export default function OrderingPage() {
                     {/* Action Buttons */}
                     <div className="space-y-2">
                       <Button
-                        onClick={handleCheckout}
+                        onClick={() => handleCheckout('HELD')}
                         className="w-full bg-orange-500 hover:bg-orange-600"
                         disabled={createOrderMutation.isPending}
                       >
-                        {createOrderMutation.isPending ? "Processing..." : "Hold Order"}
+                        {createOrderMutation.isPending && appliedDiscount?.name.startsWith("Comp:") ? "Processing..." : createOrderMutation.isPending ? "Holding..." : "Hold Order"}
                       </Button>
                       <Button
-                        onClick={handleCheckout}
+                        onClick={handleProceedToPayment}
                         className="w-full bg-green-600 hover:bg-green-700"
-                        disabled={createOrderMutation.isPending}
+                        disabled={createOrderMutation.isPending || cart.length === 0}
                       >
-                        {createOrderMutation.isPending ? "Processing..." : "Proceed"}
+                        Proceed to Payment
                       </Button>
                     </div>
                   </div>
@@ -739,18 +1206,18 @@ export default function OrderingPage() {
 
                   <div className="space-y-2">
                     <Button
-                      onClick={handleCheckout}
+                      onClick={() => handleCheckout('HELD')}
                       className="w-full bg-orange-500 hover:bg-orange-600"
                       disabled={createOrderMutation.isPending}
                     >
                       Hold Order
                     </Button>
                     <Button
-                      onClick={handleCheckout}
+                      onClick={handleProceedToPayment}
                       className="w-full bg-green-600 hover:bg-green-700"
-                      disabled={createOrderMutation.isPending}
+                      disabled={createOrderMutation.isPending || cart.length === 0}
                     >
-                      {createOrderMutation.isPending ? "Processing..." : "Proceed"}
+                      Proceed to Payment
                     </Button>
                   </div>
                 </div>
@@ -787,7 +1254,6 @@ export default function OrderingPage() {
                   value={managerPinCode}
                   onChange={setManagerPinCode}
                   placeholder="Manager PIN"
-                  type="password"
                   maxLength={10}
                 />
               </div>
@@ -811,7 +1277,7 @@ export default function OrderingPage() {
             </div>
           ) : (
             <Tabs defaultValue="discounts" className="space-y-4">
-              <TabsList className="grid grid-cols-3 w-full">
+              <TabsList className="grid grid-cols-4 w-full"> {/* Changed to grid-cols-4 */}
                 <TabsTrigger value="discounts" className="text-xs sm:text-sm">
                   <Percent className="w-4 h-4 mr-1" />
                   Discounts
@@ -823,6 +1289,10 @@ export default function OrderingPage() {
                 <TabsTrigger value="override" className="text-xs sm:text-sm">
                   <Shield className="w-4 h-4 mr-1" />
                   Override
+                </TabsTrigger>
+                <TabsTrigger value="heldOrders" className="text-xs sm:text-sm" onClick={() => setShowHeldOrdersDialog(true)}>
+                  <Receipt className="w-4 h-4 mr-1" />
+                  Held Orders
                 </TabsTrigger>
               </TabsList>
 
@@ -898,7 +1368,6 @@ export default function OrderingPage() {
                         value={compAmount}
                         onChange={setCompAmount}
                         placeholder="Optional: specific dollar amount"
-                        type="number"
                         maxLength={10}
                       />
                     </div>
@@ -982,6 +1451,90 @@ export default function OrderingPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Held Orders Dialog */}
+      <Dialog open={showHeldOrdersDialog} onOpenChange={setShowHeldOrdersDialog}>
+        <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl sm:text-2xl flex items-center gap-2">
+              <Receipt className="w-6 h-6 text-blue-600" />
+              Held Orders
+            </DialogTitle>
+          </DialogHeader>
+          {heldOrdersLoading ? (
+            <p>Loading held orders...</p>
+          ) : heldOrders.length === 0 ? (
+            <p className="text-gray-500 py-8 text-center">No orders are currently on hold.</p>
+          ) : (
+            <ScrollArea className="max-h-[60vh]">
+              <div className="space-y-3 pr-2">
+                {heldOrders.map((order) => (
+                  <Card key={order.id} className="hover:shadow-md transition-shadow">
+                    <CardContent className="p-4 flex justify-between items-center">
+                      <div>
+                        <p className="font-semibold">{order.orderNumber}</p>
+                        <p className="text-sm text-gray-600">{order.customerName || "Walk-in"}</p>
+                        <p className="text-xs text-gray-500">
+                          {order.items.length} item(s) - Total: {formatCurrency(parseFloat(order.total))}
+                       </p>
+                       <p className="text-xs text-gray-500">
+                         Held at: {order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : 'N/A'}
+                       </p>
+                     </div>
+                     <div className="flex gap-2">
+                       <Button onClick={() => {
+                         // When loading a held order, it becomes the current order for checkout
+                         setCurrentOrderForCheckout(order);
+                         handleLoadHeldOrder(order);
+                       }} size="sm">
+                         Load Order
+                       </Button>
+                       <Button
+                         onClick={() => {
+                           // Confirm before cancelling
+                           if (window.confirm(`Are you sure you want to cancel order ${order.orderNumber}? This action cannot be undone.`)) {
+                             const managerUserId = users.find(u => u.role === 'manager')?.id; // Or get from auth context
+                             updateOrderStatusMutation.mutate({ orderId: order.id, status: 'CANCELLED', managedBy: managerUserId });
+                           }
+                         }}
+                         size="sm"
+                         variant="destructive"
+                         disabled={updateOrderStatusMutation.isPending && updateOrderStatusMutation.variables?.orderId === order.id && updateOrderStatusMutation.variables?.status === 'CANCELLED'}
+                       >
+                         {updateOrderStatusMutation.isPending && updateOrderStatusMutation.variables?.orderId === order.id && updateOrderStatusMutation.variables?.status === 'CANCELLED' ? "Cancelling..." : "Cancel"}
+                       </Button>
+                     </div>
+                   </CardContent>
+                 </Card>
+               ))}
+              </div>
+            </ScrollArea>
+          )}
+           <div className="flex justify-end mt-4">
+            <Button
+              onClick={() => setShowHeldOrdersDialog(false)}
+              variant="outline"
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Checkout Dialog */}
+      {showCheckout && currentOrderForCheckout && (cart.length > 0 || ('items' in currentOrderForCheckout && currentOrderForCheckout.items.length > 0)) && (
+        <CheckoutDialog
+          open={showCheckout}
+          onOpenChange={setShowCheckout}
+          orderSubtotal={calculateDiscountedTotal()}
+          orderTax={calculateDiscountedTotal() * 0.08}
+          orderItems={cart}
+          customerName={customerName}
+          currentOrder={currentOrderForCheckout as OrderWithDetails | null}
+          onPaymentSuccess={handlePaymentSuccess}
+          onPaymentCancel={handlePaymentCancel}
+        />
+      )}
     </div>
   );
 }

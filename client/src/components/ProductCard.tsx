@@ -21,7 +21,7 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
     >
       <CardContent className="p-4">
         <img
-          src={product.imageUrl || "https://via.placeholder.com/300x200"}
+          src={product.imageUrl || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'%3E%3Cpath d='M19 7h-8v6h8V7zM12 17c0-.53-.21-1-5-1s-5.004.47-5.004 1H3v-3c0-1.1.9-2 2-2h14c1.1 0 2 .9 2 2v3h-4c-.004-.53-1-1-5-1z'/%3E%3C/svg%3E"}
           alt={product.name}
           className="w-full h-32 object-cover rounded-md mb-3"
         />

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DialogDescription } from "@/components/ui/dialog"; // Added for accessibility
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,17 +12,18 @@ import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import ProductModal from "@/components/ProductModal";
 import PosAdminDashboard from "@/components/PosAdminDashboard";
-import type { ProductWithCategory, OrderWithDetails, Setting } from "@shared/schema";
-import { 
-  DollarSign, 
-  ShoppingBag, 
+import type { ProductWithCategory, OrderWithDetails, Setting, Category, InsertCategory } from "@shared/schema";
+import {
+  DollarSign,
+  ShoppingBag,
   AlertTriangle, 
   Package, 
   Plus, 
   Edit, 
   Trash2, 
   TrendingUp,
-  Settings as SettingsIcon
+ Settings as SettingsIcon,
+ LayoutGrid // Added for Categories icon
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -29,14 +31,22 @@ export default function AdminPage() {
   const [showProductModal, setShowProductModal] = useState(false);
   const { toast } = useToast();
 
-  const { data: products = [], isLoading: productsLoading } = useQuery({
+  // Category State
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryDescription, setCategoryDescription] = useState("");
+  const [isEditingCategory, setIsEditingCategory] = useState(false);
+ 
+  const { data: products = [], isLoading: productsLoading } = useQuery<ProductWithCategory[]>({
     queryKey: ["/api/products"],
+    queryFn: () => fetch("/api/products").then(res => res.json()),
   });
-
-  const { data: categories = [] } = useQuery({
+ 
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<Category[]>({
     queryKey: ["/api/categories"],
+    queryFn: () => fetch("/api/categories").then(res => res.json()),
   });
-
+ 
   const { data: orders = [] } = useQuery<OrderWithDetails[]>({
     queryKey: ["/api/orders"],
   });
@@ -69,11 +79,105 @@ export default function AdminPage() {
     },
   });
 
+  // Category Mutations
+  const createCategoryMutation = useMutation({
+    mutationFn: async (newCategory: InsertCategory) => {
+      const response = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newCategory),
+      });
+      if (!response.ok) throw new Error("Failed to create category");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      toast({ title: "Category created", description: "New category added successfully." });
+      setCategoryName("");
+      setCategoryDescription("");
+      setIsEditingCategory(false);
+      setSelectedCategory(null);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateCategoryMutation = useMutation({
+    mutationFn: async (updatedCategory: Category) => {
+      const response = await fetch(`/api/categories/${updatedCategory.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedCategory),
+      });
+      if (!response.ok) throw new Error("Failed to update category");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      toast({ title: "Category updated", description: "Category updated successfully." });
+      setCategoryName("");
+      setCategoryDescription("");
+      setIsEditingCategory(false);
+      setSelectedCategory(null);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/categories/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Failed to delete category");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      toast({ title: "Category deleted", description: "Category deleted successfully." });
+      setCategoryName("");
+      setCategoryDescription("");
+      setIsEditingCategory(false);
+      setSelectedCategory(null);
+    },
+    onError: (error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const handleCategorySubmit = () => {
+    if (!categoryName) {
+      toast({ title: "Error", description: "Category name is required.", variant: "destructive" });
+      return;
+    }
+    if (isEditingCategory && selectedCategory) {
+      updateCategoryMutation.mutate({ ...selectedCategory, name: categoryName, description: categoryDescription });
+    } else {
+      createCategoryMutation.mutate({ name: categoryName, description: categoryDescription });
+    }
+  };
+
+  const handleEditCategory = (category: Category) => {
+    setSelectedCategory(category);
+    setCategoryName(category.name);
+    setCategoryDescription(category.description || "");
+    setIsEditingCategory(true);
+  };
+
+  const handleCancelEditCategory = () => {
+    setSelectedCategory(null);
+    setCategoryName("");
+    setCategoryDescription("");
+    setIsEditingCategory(false);
+  };
+ 
   const openProductModal = (product?: ProductWithCategory) => {
     setSelectedProduct(product || null);
     setShowProductModal(true);
   };
-
+ 
   const getStockStatus = (product: ProductWithCategory) => {
     if (product.stock <= (product.minStock || 5)) {
       return { label: "Low Stock", variant: "destructive" as const };
@@ -97,7 +201,7 @@ export default function AdminPage() {
       <h1 className="text-3xl font-bold">POS Admin Dashboard</h1>
       
       <Tabs defaultValue="dashboard" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dashboard" className="flex items-center gap-2">
             <DollarSign className="w-4 h-4" />
             Dashboard
@@ -105,6 +209,10 @@ export default function AdminPage() {
           <TabsTrigger value="products" className="flex items-center gap-2">
             <Package className="w-4 h-4" />
             Products
+          </TabsTrigger>
+          <TabsTrigger value="categories" className="flex items-center gap-2">
+            <LayoutGrid className="w-4 h-4" />
+            Categories
           </TabsTrigger>
           <TabsTrigger value="inventory" className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
@@ -205,6 +313,108 @@ export default function AdminPage() {
           </Card>
         </TabsContent>
 
+        {/* Categories Management */}
+        <TabsContent value="categories">
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-1">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{isEditingCategory ? "Edit Category" : "Add New Category"}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="categoryName">Category Name</Label>
+                    <Input
+                      id="categoryName"
+                      value={categoryName}
+                      onChange={(e) => setCategoryName(e.target.value)}
+                      placeholder="e.g., Appetizers, Main Courses"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="categoryDescription">Description (Optional)</Label>
+                    <Input
+                      id="categoryDescription"
+                      value={categoryDescription}
+                      onChange={(e) => setCategoryDescription(e.target.value)}
+                      placeholder="Brief description of the category"
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button onClick={handleCategorySubmit} disabled={createCategoryMutation.isPending || updateCategoryMutation.isPending}>
+                      {isEditingCategory ? "Update Category" : "Add Category"}
+                    </Button>
+                    {isEditingCategory && (
+                      <Button variant="outline" onClick={handleCancelEditCategory}>
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <div className="md:col-span-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Existing Categories</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2">Name</th>
+                          <th className="text-left py-2">Description</th>
+                          <th className="text-left py-2">Products</th>
+                          <th className="text-left py-2">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {categoriesLoading && <tr><td colSpan={4} className="text-center py-4">Loading categories...</td></tr>}
+                        {!categoriesLoading && categories.map((category: Category) => (
+                          <tr key={category.id} className="border-b">
+                            <td className="py-2">{category.name}</td>
+                            <td className="py-2">{category.description || "-"}</td>
+                            <td className="py-2">
+                              {products.filter(p => p.categoryId === category.id).length}
+                            </td>
+                            <td className="py-2">
+                              <div className="flex space-x-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleEditCategory(category)}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => deleteCategoryMutation.mutate(category.id)}
+                                  disabled={deleteCategoryMutation.isPending}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {!categoriesLoading && categories.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="text-center py-4 text-muted-foreground">
+                              No categories found. Add one to get started.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+ 
         {/* Inventory Management */}
         <TabsContent value="inventory">
           <div className="grid gap-6">

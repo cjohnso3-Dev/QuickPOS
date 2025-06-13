@@ -1,10 +1,33 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from 'express-session';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { User, AppRole } from "@shared/schema"; // Import User and AppRole types
+
+// Augment express-session with a custom User type
+declare module 'express-session' {
+  interface SessionData {
+    user?: Omit<User, 'pinHash'> & { roles?: AppRole[] };
+  }
+}
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Session middleware
+// TODO: Replace MemoryStore with a persistent store for production (e.g., connect-pg-simple or connect-sqlite3)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-very-secret-key-for-pos', // Replace with a strong secret from env variables
+  resave: false,
+  saveUninitialized: false, // Set to false, common practice
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true, // Prevent client-side JS from accessing the cookie
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -50,9 +73,9 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
+  if (app.get("env") === "development" && !process.env.VITE_DEV_SERVER_RUNNING) {
     await setupVite(app, server);
-  } else {
+  } else if (app.get("env") !== "development") {
     serveStatic(app);
   }
 
@@ -63,7 +86,6 @@ app.use((req, res, next) => {
   server.listen({
     port,
     host: "0.0.0.0",
-    reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });

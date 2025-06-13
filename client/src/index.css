@@ -103,3 +103,18 @@
     @apply shadow-md;
   }
 }
+
+@layer components {
+  /*
+    Final Fix: Elevate the POS header toggle button to ensure
+    it sits on top of any other overlapping elements like a
+    rogue hamburger menu icon.
+  */
+  #pos-view-toggle {
+    display: inline-flex !important;
+    position: relative !important;
+    z-index: 50 !important;
+  }
+}
+
+

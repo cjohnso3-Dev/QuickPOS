@@ -56,7 +56,6 @@ export default function QuickOrderCard({ product, onQuickAdd, onCustomAdd }: Qui
     };
 
     onCustomAdd(cartItem);
-    setShowSizeOptions(false);
   };
 
   const handleCustomizeClick = () => {

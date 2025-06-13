@@ -1,6 +1,6 @@
 import { 
   users,
-  timeClocks,
+  timeClockEvents,
   categories, 
   products, 
   orders, 
@@ -11,7 +11,7 @@ import {
   auditLogs,
   settings,
   type User,
-  type TimeClock,
+  type TimeClockEvent,
   type Category, 
   type Product, 
   type Order, 
@@ -22,38 +22,64 @@ import {
   type AuditLog,
   type Setting,
   type InsertUser,
-  type InsertTimeClock,
+  type InsertTimeClockEvent,
   type InsertCategory, 
   type InsertProduct, 
   type InsertOrder, 
-  type InsertOrderItem, 
+  type InsertOrderItem,
   type InsertPayment,
   type InsertDiscount,
   type InsertTaxRate,
   type InsertAuditLog,
   type InsertSetting,
+  type InsertOrderApiPayload, // Added
   type UserWithTimeClock,
   type ProductWithCategory,
   type OrderWithDetails,
   type CartItem,
-  type PaymentSplit
+  type PaymentSplit,
+  appRoles,
+  userAppRoles,
+  type InsertAppRole, // Added for new methods
+  type UserAppRole,   // Added for new methods
+  type AppRole,       // Added for new methods
+  type UserWithRoles,  // Import UserWithRoles
+  apiOrderItemSchema, // Import for createOrder items
+  type InsertOrderItem as SharedInsertOrderItem, // Alias to avoid conflict
+  type ProductModification // For parsing product modificationOptions
 } from "@shared/schema";
+import { db } from './db';
+import { z } from 'zod'; // Import z from zod
+import { eq, and, asc, desc, sql, sum, gte, lte, isNull, count } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core'; // Added for DbStorage
+
 
 export interface IStorage {
   // Users
-  getUsers(): Promise<UserWithTimeClock[]>;
+  getUsers(): Promise<UserWithTimeClock[]>; // Correctly returns UserWithTimeClock[]
   getUser(id: number): Promise<UserWithTimeClock | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmployeeCode(employeeCode: string): Promise<UserWithRoles | undefined>; // New method
+  getUserByUsername(username: string): Promise<User | undefined>; // This might be deprecated or changed
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   deleteUser(id: number): Promise<boolean>;
+
+  // AppRoles
+  getAppRoles(): Promise<AppRole[]>;
+  getAppRole(id: number): Promise<AppRole | undefined>;
+  createAppRole(roleData: InsertAppRole): Promise<AppRole>;
+  updateAppRole(id: number, roleData: Partial<InsertAppRole>): Promise<AppRole | undefined>;
+  deleteAppRole(id: number): Promise<boolean>;
+
+  // UserAppRoles
+  assignRoleToUser(userId: number, roleId: number): Promise<UserAppRole>;
+  removeRoleFromUser(userId: number, roleId: number): Promise<boolean>;
+  getUserRoles(userId: number): Promise<AppRole[]>;
   
-  // Time Clocks
-  clockIn(userId: number): Promise<TimeClock>;
-  clockOut(userId: number): Promise<TimeClock | undefined>;
-  getCurrentTimeClock(userId: number): Promise<TimeClock | undefined>;
-  getTodayHours(userId: number): Promise<number>;
-  getTimeClocks(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClock[]>;
+  // Time Clock Events
+  createTimeClockEvent(userId: number, eventType: 'clock-in' | 'clock-out' | 'break-start' | 'break-end'): Promise<TimeClockEvent>;
+  getLatestTimeClockEvent(userId: number): Promise<TimeClockEvent | undefined>;
+  getTimeClockEvents(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClockEvent[]>;
   
   // Categories
   getCategories(): Promise<Category[]>;
@@ -70,9 +96,9 @@ export interface IStorage {
   updateProductStock(id: number, stock: number): Promise<Product | undefined>;
   
   // Orders
-  getOrders(): Promise<OrderWithDetails[]>;
+  getOrders(filters?: { status?: string }): Promise<OrderWithDetails[]>;
   getOrder(id: number): Promise<OrderWithDetails | undefined>;
-  createOrder(order: InsertOrder): Promise<Order>;
+  createOrder(order: InsertOrderApiPayload): Promise<Order>; // Modified
   updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>;
   updateOrderStatus(id: number, status: string, managedBy?: number): Promise<Order | undefined>;
   
@@ -123,9 +149,834 @@ export interface IStorage {
   getEmployeeReport(userId?: number, startDate?: Date, endDate?: Date): Promise<any>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private timeClocks: Map<number, TimeClock>;
+export class DbStorage implements IStorage {
+  // User methods
+  async getUserByEmployeeCode(employeeCode: string): Promise<UserWithRoles | undefined> {
+    const result = await db.select()
+      .from(users)
+      .where(eq(users.employeeCode, employeeCode))
+      .leftJoin(userAppRoles, eq(users.id, userAppRoles.userId))
+      .leftJoin(appRoles, eq(userAppRoles.roleId, appRoles.id))
+      .limit(1); // Ensure we only get one user if multiple rows due to roles
+
+    if (result.length === 0 || !result[0].users) {
+      return undefined;
+    }
+    
+    // Need to aggregate roles for the user if multiple roles exist
+    // For now, let's fetch all roles for that user in a separate query or process results
+    const userRecord = result[0].users;
+
+    let rolesResult: AppRole[] = [];
+    try {
+      rolesResult = await db.select({
+          id: appRoles.id,
+          name: appRoles.name,
+          description: appRoles.description,
+          category: appRoles.category,
+        })
+        .from(userAppRoles)
+        .innerJoin(appRoles, eq(userAppRoles.roleId, appRoles.id))
+        .where(eq(userAppRoles.userId, userRecord.id));
+    } catch (error) {
+      console.error(`Error fetching roles for user ${userRecord.id}:`, error);
+      // Continue with an empty roles array if fetching fails
+    }
+
+    return {
+      ...userRecord,
+      roles: rolesResult || [],
+    };
+  }
+ 
+  async getUsers(): Promise<UserWithTimeClock[]> {
+    const userList = await db.select().from(users);
+    const usersWithData: UserWithTimeClock[] = [];
+    for (const user of userList) {
+      const roles = await this.getUserRoles(user.id);
+      const timeClockEvents = await this.getTimeClockEvents(user.id);
+      usersWithData.push({
+        ...user,
+        roles,
+        timeClockEvents,
+      });
+    }
+    return usersWithData;
+  }
+
+  async getUser(id: number): Promise<UserWithTimeClock | undefined> {
+    const userResult = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    if (userResult.length === 0) {
+      return undefined;
+    }
+    const userRecord = userResult[0];
+    let roles: AppRole[] = [];
+    try {
+      roles = await this.getUserRoles(userRecord.id);
+    } catch (error) {
+      console.error(`Error fetching roles for user ${userRecord.id}:`, error);
+      // Continue with an empty roles array if fetching fails
+    }
+    
+    const timeClockEvents = await this.getTimeClockEvents(userRecord.id);
+    
+    const userToReturn = {
+      ...userRecord,
+      roles,
+      timeClockEvents,
+    };
+    return userToReturn;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    // This method is likely deprecated in favor of getUserByEmployeeCode.
+    // If it needs to be kept, it should be defined what 'username' refers to (e.g., email).
+    console.warn("DbStorage.getUserByUsername() is deprecated. Use getUserByEmployeeCode or clarify username field.");
+    // Example: find by email if username is treated as email
+    // const result = await db.select().from(users).where(eq(users.email, username)).limit(1);
+    // return result[0];
+    return undefined;
+  }
+
+  async createUser(userData: InsertUser): Promise<User> {
+    // Assumes userData includes pinHash if a PIN was provided (handled by route)
+    const [newUser] = await db.insert(users).values(userData).returning();
+    // Role assignment is handled by assignRoleToUser via a separate route.
+    // If default roles were to be assigned on creation, that logic would be here.
+    return newUser;
+  }
+
+  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User | undefined> {
+    // Assumes userData might include pinHash if PIN is being updated (handled by route)
+    const [updatedUser] = await db.update(users).set(userData).where(eq(users.id, id)).returning();
+    // Role updates are handled by assignRoleToUser/removeRoleFromUser via separate routes.
+    return updatedUser;
+  }
+
+  async deleteUser(id: number): Promise<boolean> {
+    // First, delete related time clock entries as they don't have onDelete: "cascade"
+    await db.delete(timeClockEvents).where(eq(timeClockEvents.userId, id));
+    
+    // UserAppRoles have onDelete: "cascade" in their schema definition,
+    // so they should be deleted automatically when the user is deleted if DB foreign key enforcement is on.
+    // If not, they would need to be deleted manually here too:
+    // await db.delete(userAppRoles).where(eq(userAppRoles.userId, id));
+
+    const result = await db.delete(users).where(eq(users.id, id)).returning({ id: users.id });
+    return result.length > 0;
+  }
+
+  // AppRoles methods
+  async getAppRoles(): Promise<AppRole[]> {
+    return db.select().from(appRoles);
+  }
+  async getAppRole(id: number): Promise<AppRole | undefined> {
+    const result = await db.select().from(appRoles).where(eq(appRoles.id, id)).limit(1);
+    return result[0];
+  }
+  async createAppRole(roleData: InsertAppRole): Promise<AppRole> {
+    const [newRole] = await db.insert(appRoles).values(roleData).returning();
+    return newRole;
+  }
+  async updateAppRole(id: number, roleData: Partial<InsertAppRole>): Promise<AppRole | undefined> {
+    const [updatedRole] = await db.update(appRoles).set(roleData).where(eq(appRoles.id, id)).returning();
+    return updatedRole;
+  }
+  async deleteAppRole(id: number): Promise<boolean> {
+    // Drizzle schema for userAppRoles has onDelete: "cascade",
+    // so related assignments in userAppRoles table will be deleted automatically by the DB if configured.
+    // If not, manual deletion from userAppRoles would be needed here first.
+    // For SQLite, CASCADE is often handled by PRAGMA foreign_keys=ON; and table definition.
+    // Assuming cascade is effective.
+    const result = await db.delete(appRoles).where(eq(appRoles.id, id)).returning({ id: appRoles.id });
+    return result.length > 0;
+  }
+
+  // UserAppRoles methods
+  async assignRoleToUser(userId: number, roleId: number): Promise<UserAppRole> {
+    // Check if user and role exist before assigning
+    const userExists = await db.select({id: users.id}).from(users).where(eq(users.id, userId)).limit(1);
+    const roleExists = await db.select({id: appRoles.id}).from(appRoles).where(eq(appRoles.id, roleId)).limit(1);
+
+    if (userExists.length === 0) throw new Error(`User with ID ${userId} not found.`);
+    if (roleExists.length === 0) throw new Error(`Role with ID ${roleId} not found.`);
+
+    const [assignment] = await db.insert(userAppRoles).values({ userId, roleId }).onConflictDoNothing().returning();
+     if (!assignment) { // If onConflictDoNothing caused no insert (already exists)
+        const existing = await db.select().from(userAppRoles).where(and(eq(userAppRoles.userId, userId), eq(userAppRoles.roleId, roleId))).limit(1);
+        if (existing[0]) return existing[0];
+        throw new Error('Failed to assign role, assignment might already exist but not returned.'); // Should not happen if onConflictDoNothing
+    }
+    return assignment;
+  }
+  async removeRoleFromUser(userId: number, roleId: number): Promise<boolean> {
+    const result = await db.delete(userAppRoles).where(and(eq(userAppRoles.userId, userId), eq(userAppRoles.roleId, roleId))).returning({ userId: userAppRoles.userId });
+    return result.length > 0;
+  }
+  async getUserRoles(userId: number): Promise<AppRole[]> {
+     return db.select({
+        id: appRoles.id,
+        name: appRoles.name,
+        description: appRoles.description,
+        category: appRoles.category,
+      })
+      .from(userAppRoles)
+      .innerJoin(appRoles, eq(userAppRoles.roleId, appRoles.id))
+      .where(eq(userAppRoles.userId, userId));
+  }
+
+  // Time Clock Event methods
+  async createTimeClockEvent(userId: number, eventType: 'clock-in' | 'clock-out' | 'break-start' | 'break-end'): Promise<TimeClockEvent> {
+    const now = new Date();
+    const eventData: InsertTimeClockEvent = {
+      userId,
+      eventType,
+      eventTime: now,
+    };
+    const [newEvent] = await db.insert(timeClockEvents).values(eventData).returning();
+    return newEvent;
+  }
+
+  async getLatestTimeClockEvent(userId: number): Promise<TimeClockEvent | undefined> {
+    const result = await db.select()
+      .from(timeClockEvents)
+      .where(eq(timeClockEvents.userId, userId))
+      .orderBy(desc(timeClockEvents.eventTime))
+      .limit(1);
+    return result[0];
+  }
+
+  async getTimeClockEvents(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClockEvent[]> {
+    const conditions = [eq(timeClockEvents.userId, userId)];
+    if (startDate) {
+      conditions.push(gte(timeClockEvents.eventTime, startDate));
+    }
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      conditions.push(lte(timeClockEvents.eventTime, endOfDay));
+    }
+    return db.select().from(timeClockEvents).where(and(...conditions)).orderBy(desc(timeClockEvents.eventTime));
+  }
+
+  // Category methods (Stubs)
+  async getCategories(): Promise<Category[]> {
+    return db.select()
+      .from(categories)
+      .where(eq(categories.isActive, true))
+      .orderBy(asc(categories.sortOrder));
+  }
+  async createCategory(categoryData: InsertCategory): Promise<Category> {
+    const [newCategory] = await db.insert(categories).values(categoryData).returning();
+    return newCategory;
+  }
+  async updateCategory(id: number, categoryData: Partial<InsertCategory>): Promise<Category | undefined> {
+    const [updatedCategory] = await db.update(categories).set(categoryData).where(eq(categories.id, id)).returning();
+    return updatedCategory;
+  }
+
+  async deleteCategory(id: number): Promise<boolean> {
+    // Set categoryId to null for products associated with this category
+    await db.update(products).set({ categoryId: null }).where(eq(products.categoryId, id));
+    const result = await db.delete(categories).where(eq(categories.id, id)).returning({ id: categories.id });
+    return result.length > 0;
+  }
+
+  // Product methods
+  async getProducts(): Promise<ProductWithCategory[]> {
+    const result = await db.select({
+      id: products.id,
+      name: products.name,
+      description: products.description,
+      price: products.price,
+      categoryId: products.categoryId,
+      imageUrl: products.imageUrl,
+      sku: products.sku,
+      stock: products.stock,
+      minStock: products.minStock,
+      maxStock: products.maxStock,
+      isActive: products.isActive,
+      hasSizes: products.hasSizes,
+      allowModifications: products.allowModifications,
+      itemType: products.itemType,
+      requiresInventory: products.requiresInventory,
+      taxable: products.taxable,
+      serviceDetails: products.serviceDetails,
+      modificationOptions: products.modificationOptions,
+      createdAt: products.createdAt,
+      category: categories // Select all columns from categories table
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(eq(products.isActive, true))
+    .orderBy(asc(products.name));
+
+    return result.map(p => {
+      let parsedModificationOptions: ProductModification[] | null = null;
+      if (typeof p.modificationOptions === 'string') {
+        try {
+          parsedModificationOptions = JSON.parse(p.modificationOptions);
+        } catch (e) {
+          console.error(`Failed to parse modificationOptions for product ${p.id}:`, e);
+          // Keep it as null or an empty array if parsing fails, depending on desired behavior
+        }
+      } else if (Array.isArray(p.modificationOptions)) {
+        // This case handles if Drizzle somehow already parsed it (less likely for SQLite text column)
+        // or if the data was in an unexpected format but was an array.
+        parsedModificationOptions = p.modificationOptions as ProductModification[];
+      }
+      return {
+        ...p,
+        category: p.category?.id ? p.category : undefined,
+        modificationOptions: parsedModificationOptions,
+      };
+    }) as ProductWithCategory[];
+  }
+
+  async getProduct(id: number): Promise<ProductWithCategory | undefined> {
+    const result = await db.select({
+      id: products.id,
+      name: products.name,
+      description: products.description,
+      price: products.price,
+      categoryId: products.categoryId,
+      imageUrl: products.imageUrl,
+      sku: products.sku,
+      stock: products.stock,
+      minStock: products.minStock,
+      maxStock: products.maxStock,
+      isActive: products.isActive,
+      hasSizes: products.hasSizes,
+      allowModifications: products.allowModifications,
+      itemType: products.itemType,
+      requiresInventory: products.requiresInventory,
+      taxable: products.taxable,
+      serviceDetails: products.serviceDetails,
+      modificationOptions: products.modificationOptions,
+      createdAt: products.createdAt,
+      category: categories
+    })
+    .from(products)
+    .leftJoin(categories, eq(products.categoryId, categories.id))
+    .where(eq(products.id, id))
+    .limit(1);
+
+    if (result.length === 0) {
+      return undefined;
+    }
+    const p = result[0];
+    let parsedModificationOptions: ProductModification[] | null = null;
+    if (typeof p.modificationOptions === 'string') {
+      try {
+        parsedModificationOptions = JSON.parse(p.modificationOptions);
+      } catch (e) {
+        console.error(`Failed to parse modificationOptions for product ${p.id}:`, e);
+      }
+    } else if (Array.isArray(p.modificationOptions)) {
+        parsedModificationOptions = p.modificationOptions as ProductModification[];
+    }
+    return {
+        ...p,
+        category: p.category?.id ? p.category : undefined,
+        modificationOptions: parsedModificationOptions,
+    } as ProductWithCategory;
+  }
+
+  async createProduct(productData: InsertProduct): Promise<Product> {
+    const [newProduct] = await db.insert(products).values(productData).returning();
+    return newProduct;
+  }
+
+  async updateProduct(id: number, productData: Partial<InsertProduct>): Promise<Product | undefined> {
+    const [updatedProduct] = await db.update(products).set(productData).where(eq(products.id, id)).returning();
+    return updatedProduct;
+  }
+
+  async deleteProduct(id: number): Promise<boolean> {
+    // Consider orderItems referencing this product.
+    // For now, we'll allow deletion. A more robust solution might prevent deletion
+    // if product is in existing non-completed orders or set product to inactive.
+    const result = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id });
+    return result.length > 0;
+  }
+
+  async updateProductStock(id: number, stock: number): Promise<Product | undefined> {
+    const [updatedProduct] = await db.update(products).set({ stock }).where(eq(products.id, id)).returning();
+    return updatedProduct;
+  }
+
+  // Order methods
+  async getOrders(filters?: { status?: string }): Promise<OrderWithDetails[]> {
+    const createdByAlias = alias(users, 'createdByAlias');
+    const managedByAlias = alias(users, 'managedByAlias');
+
+    let query = db.select({
+      // Order fields
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      customerName: orders.customerName,
+      customerPhone: orders.customerPhone,
+      customerEmail: orders.customerEmail,
+      subtotal: orders.subtotal,
+      tax: orders.tax,
+      tipAmount: orders.tipAmount,
+      discountAmount: orders.discountAmount,
+      total: orders.total,
+      status: orders.status,
+      orderType: orders.orderType,
+      tableNumber: orders.tableNumber,
+      notes: orders.notes,
+      createdBy: orders.createdBy,
+      managedBy: orders.managedBy,
+      createdAt: orders.createdAt,
+      updatedAt: orders.updatedAt,
+      // User fields
+      createdByUser: createdByAlias,
+      managedByUser: managedByAlias,
+    })
+    .from(orders)
+    .leftJoin(createdByAlias, eq(orders.createdBy, createdByAlias.id))
+    .leftJoin(managedByAlias, eq(orders.managedBy, managedByAlias.id))
+    .orderBy(desc(orders.createdAt));
+
+    if (filters?.status) {
+      // query = query.where(eq(orders.status, filters.status)); // This line has a type error, Drizzle's where doesn't chain like this directly on assignment
+      // Correct way to conditionally add where clause:
+      query.where(eq(orders.status, filters.status));
+    }
+
+    const orderResults = await query;
+
+    const ordersWithDetails: OrderWithDetails[] = [];
+    for (const o of orderResults) {
+      const items = await this.getOrderItems(o.id); // This will be implemented next
+      const paymentRecords = await this.getPayments(o.id); // This will be implemented next
+      ordersWithDetails.push({
+        ...o,
+        items,
+        payments: paymentRecords,
+        createdByUser: o.createdByUser?.id ? o.createdByUser : undefined,
+        managedByUser: o.managedByUser?.id ? o.managedByUser : undefined,
+      } as OrderWithDetails);
+    }
+    return ordersWithDetails;
+  }
+
+  async getOrder(id: number): Promise<OrderWithDetails | undefined> {
+    const createdByAlias = alias(users, 'createdByAlias');
+    const managedByAlias = alias(users, 'managedByAlias');
+
+    const result = await db.select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      customerName: orders.customerName,
+      customerPhone: orders.customerPhone,
+      customerEmail: orders.customerEmail,
+      subtotal: orders.subtotal,
+      tax: orders.tax,
+      tipAmount: orders.tipAmount,
+      discountAmount: orders.discountAmount,
+      total: orders.total,
+      status: orders.status,
+      orderType: orders.orderType,
+      tableNumber: orders.tableNumber,
+      notes: orders.notes,
+      createdBy: orders.createdBy,
+      managedBy: orders.managedBy,
+      createdAt: orders.createdAt,
+      updatedAt: orders.updatedAt,
+      createdByUser: createdByAlias,
+      managedByUser: managedByAlias,
+    })
+    .from(orders)
+    .leftJoin(createdByAlias, eq(orders.createdBy, createdByAlias.id))
+    .leftJoin(managedByAlias, eq(orders.managedBy, managedByAlias.id))
+    .where(eq(orders.id, id))
+    .limit(1);
+
+    if (result.length === 0) {
+      return undefined;
+    }
+
+    const o = result[0];
+    const items = await this.getOrderItems(o.id); // This will be implemented next
+    const paymentRecords = await this.getPayments(o.id); // This will be implemented next
+
+    return {
+      ...o,
+      items,
+      payments: paymentRecords,
+      createdByUser: o.createdByUser?.id ? o.createdByUser : undefined,
+      managedByUser: o.managedByUser?.id ? o.managedByUser : undefined,
+    } as OrderWithDetails;
+  }
+  async createOrder(orderPayload: InsertOrderApiPayload): Promise<Order> {
+    return db.transaction(async (tx) => {
+      const { items, ...orderData } = orderPayload;
+
+      // Generate a unique order number
+      const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+      // 1. Create the main order record
+      const [newOrder] = await tx.insert(orders).values({
+        ...orderData,
+        orderNumber: orderNumber, // Provide the generated orderNumber
+        updatedAt: new Date(),    // Set updatedAt timestamp
+      }).returning();
+
+      if (!newOrder) {
+        throw new Error("Failed to create order record.");
+      }
+
+      // 2. Create order items
+      if (items && items.length > 0) {
+        const orderItemsData = items.map((item: z.infer<typeof apiOrderItemSchema>) => ({ // Explicitly type item using the imported schema
+          orderId: newOrder.id,
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: String(item.unitPrice), // Ensure string format for TEXT column
+          totalPrice: String(item.totalPrice), // Ensure string format for TEXT column
+          modifications: item.modifications ? item.modifications : null, // Already string | null
+          specialInstructions: item.specialInstructions,
+        }));
+        await tx.insert(orderItems).values(orderItemsData);
+      }
+      return newOrder;
+    });
+  }
+
+  async updateOrder(id: number, orderData: Partial<InsertOrder>): Promise<Order | undefined> {
+    // Use Partial<typeof orders.$inferInsert> to allow setting updatedAt
+    const dataToUpdate: Partial<typeof orders.$inferInsert> = {
+      ...orderData,
+      updatedAt: new Date()
+    };
+    const [updatedOrder] = await db.update(orders).set(dataToUpdate).where(eq(orders.id, id)).returning();
+    return updatedOrder;
+  }
+
+  async updateOrderStatus(id: number, status: string, managedBy?: number): Promise<Order | undefined> {
+    const updateData: Partial<typeof orders.$inferInsert> = {
+      status,
+      updatedAt: new Date()
+    };
+    if (managedBy !== undefined) {
+      updateData.managedBy = managedBy;
+    }
+    const [updatedOrder] = await db.update(orders).set(updateData).where(eq(orders.id, id)).returning();
+    return updatedOrder;
+  }
+
+  // Order Item methods
+  async createOrderItem(orderItemData: SharedInsertOrderItem): Promise<OrderItem> {
+    const [newOrderItem] = await db.insert(orderItems).values(orderItemData).returning();
+    return newOrderItem;
+  }
+
+  async updateOrderItem(id: number, orderItemData: Partial<SharedInsertOrderItem>): Promise<OrderItem | undefined> {
+    const [updatedOrderItem] = await db.update(orderItems).set(orderItemData).where(eq(orderItems.id, id)).returning();
+    return updatedOrderItem;
+  }
+
+  async deleteOrderItem(id: number): Promise<boolean> {
+    const result = await db.delete(orderItems).where(eq(orderItems.id, id)).returning({ id: orderItems.id });
+    return result.length > 0;
+  }
+
+  async compOrderItem(id: number, compedByUserId: number, reason: string): Promise<OrderItem | undefined> {
+    const updateData = {
+      isComped: true,
+      compedBy: compedByUserId,
+      compReason: reason,
+    };
+    const [compedItem] = await db.update(orderItems).set(updateData).where(eq(orderItems.id, id)).returning();
+    return compedItem;
+  }
+
+  async getOrderItems(orderIdToFetch: number): Promise<(OrderItem & { product: Product })[]> {
+    const result = await db.select({
+      // OrderItem fields
+      id: orderItems.id,
+      orderId: orderItems.orderId,
+      productId: orderItems.productId,
+      quantity: orderItems.quantity,
+      unitPrice: orderItems.unitPrice,
+      totalPrice: orderItems.totalPrice,
+      modifications: orderItems.modifications,
+      specialInstructions: orderItems.specialInstructions,
+      isComped: orderItems.isComped,
+      compedBy: orderItems.compedBy,
+      compReason: orderItems.compReason,
+      // Product fields (all columns from products table)
+      product: products,
+    })
+    .from(orderItems)
+    .innerJoin(products, eq(orderItems.productId, products.id))
+    .where(eq(orderItems.orderId, orderIdToFetch));
+    
+    // Drizzle returns the joined product table as a nested object named 'product'.
+    // The structure should already match (OrderItem & { product: Product })
+    return result as (OrderItem & { product: Product })[];
+  }
+
+  // Payment methods
+  async createPayment(paymentData: InsertPayment): Promise<Payment> {
+    const [newPayment] = await db.insert(payments).values(paymentData).returning();
+    return newPayment;
+  }
+
+  async getPayments(orderIdToFetch: number): Promise<Payment[]> {
+    return db.select().from(payments).where(eq(payments.orderId, orderIdToFetch));
+  }
+
+  async processRefund(originalPaymentId: number, refundAmount: number, processedByUserId: number): Promise<Payment> {
+    // Fetch the original payment to get orderId and paymentMethod
+    const originalPayment = await db.select().from(payments).where(eq(payments.id, originalPaymentId)).limit(1);
+    if (originalPayment.length === 0) {
+      throw new Error(`Original payment with ID ${originalPaymentId} not found.`);
+    }
+
+    const refundData: InsertPayment = {
+      orderId: originalPayment[0].orderId,
+      paymentMethod: originalPayment[0].paymentMethod, // Or a specific 'refund' method
+      amount: String(-Math.abs(refundAmount)), // Ensure amount is negative
+      status: "refunded", // Or a specific status for refunds
+      processedBy: processedByUserId,
+      // stripePaymentId might be relevant if refunding via Stripe API, not handled here
+      // createdAt is handled by default in schema, no need to be explicit for InsertPayment
+    };
+    const [newRefundPayment] = await db.insert(payments).values(refundData).returning();
+    return newRefundPayment;
+  }
+
+  // Discount methods
+  async getDiscounts(): Promise<Discount[]> {
+    return db.select().from(discounts).where(eq(discounts.isActive, true)).orderBy(asc(discounts.name));
+  }
+
+  async createDiscount(discountData: InsertDiscount): Promise<Discount> {
+    const [newDiscount] = await db.insert(discounts).values(discountData).returning();
+    return newDiscount;
+  }
+
+  async updateDiscount(id: number, discountData: Partial<InsertDiscount>): Promise<Discount | undefined> {
+    const [updatedDiscount] = await db.update(discounts).set(discountData).where(eq(discounts.id, id)).returning();
+    return updatedDiscount;
+  }
+
+  async deleteDiscount(id: number): Promise<boolean> {
+    // Consider if discounts are tied to orders; for now, direct deletion.
+    // Alternatively, could set isActive to false.
+    const result = await db.delete(discounts).where(eq(discounts.id, id)).returning({ id: discounts.id });
+    return result.length > 0;
+  }
+
+  // Tax Rate methods
+  async getTaxRates(): Promise<TaxRate[]> {
+    return db.select().from(taxRates).where(eq(taxRates.isActive, true)).orderBy(asc(taxRates.name));
+  }
+
+  async getDefaultTaxRate(): Promise<TaxRate | undefined> {
+    const result = await db.select().from(taxRates).where(and(eq(taxRates.isDefault, true), eq(taxRates.isActive, true))).limit(1);
+    return result[0];
+  }
+
+  async createTaxRate(taxRateData: InsertTaxRate): Promise<TaxRate> {
+    const [newTaxRate] = await db.insert(taxRates).values(taxRateData).returning();
+    return newTaxRate;
+  }
+
+  async updateTaxRate(id: number, taxRateData: Partial<InsertTaxRate>): Promise<TaxRate | undefined> {
+    const [updatedTaxRate] = await db.update(taxRates).set(taxRateData).where(eq(taxRates.id, id)).returning();
+    return updatedTaxRate;
+  }
+
+  // Audit Log methods
+  async createAuditLog(logData: InsertAuditLog): Promise<AuditLog> {
+    const [newLog] = await db.insert(auditLogs).values(logData).returning();
+    return newLog;
+  }
+
+  async getAuditLogs(entityType?: string, entityId?: number): Promise<AuditLog[]> {
+    const conditions = [];
+    if (entityType) {
+      conditions.push(eq(auditLogs.entityType, entityType));
+    }
+    if (entityId !== undefined) {
+      conditions.push(eq(auditLogs.entityId, entityId));
+    }
+
+    // Start with a base query
+    let queryBuilder = db.select().from(auditLogs);
+
+    // Apply the where clause with all conditions
+    if (conditions.length > 0) {
+      queryBuilder = queryBuilder.where(and(...conditions)) as typeof queryBuilder;
+    }
+    
+    // Finally, apply orderBy and execute
+    return queryBuilder.orderBy(desc(auditLogs.createdAt));
+  }
+
+  // Settings methods
+  async getSetting(key: string): Promise<Setting | undefined> {
+    const result = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
+    return result[0];
+  }
+
+  async setSetting(key: string, value: string, categoryVal?: string, descriptionVal?: string): Promise<Setting> {
+    const settingData: InsertSetting = { key, value };
+    if (categoryVal) settingData.category = categoryVal;
+    if (descriptionVal) settingData.description = descriptionVal;
+
+    // Try to insert, and on conflict (unique key constraint), update.
+    const [resultSet] = await db.insert(settings)
+      .values(settingData)
+      .onConflictDoUpdate({ target: settings.key, set: { value, category: categoryVal, description: descriptionVal } })
+      .returning();
+    return resultSet;
+  }
+
+  async getSettings(categoryVal?: string): Promise<Setting[]> {
+    if (categoryVal) {
+      return db.select().from(settings).where(eq(settings.category, categoryVal)).orderBy(asc(settings.key));
+    }
+    return db.select().from(settings).orderBy(asc(settings.category), asc(settings.key));
+  }
+
+  // Reports and Stats
+  async getTodayStats(): Promise<{
+    todaySales: number;
+    todayOrders: number;
+    lowStockCount: number;
+    activeProductCount: number;
+    todayTips: number;
+    averageOrderValue: number;
+  }> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const salesResult = await db.select({
+        totalSales: sum(sql<number>`cast(${orders.total} as real)`),
+        totalTips: sum(sql<number>`cast(${orders.tipAmount} as real)`),
+        orderCount: count(orders.id)
+      })
+      .from(orders)
+      .where(and(
+        gte(orders.createdAt, todayStart),
+        lte(orders.createdAt, todayEnd),
+        eq(orders.status, "completed")
+      ));
+
+    const todaySales = Number(salesResult[0]?.totalSales) || 0;
+    const todayTips = Number(salesResult[0]?.totalTips) || 0;
+    const todayOrderCount = Number(salesResult[0]?.orderCount) || 0;
+
+    const lowStockResult = await db.select({ count: count() })
+      .from(products)
+      .where(sql`${products.stock} <= ${products.minStock}`);
+    const lowStockCount = Number(lowStockResult[0]?.count) || 0;
+
+    const activeProductResult = await db.select({ count: count() })
+      .from(products)
+      .where(eq(products.isActive, true));
+    const activeProductCount = Number(activeProductResult[0]?.count) || 0;
+    
+    const averageOrderValue = todayOrderCount > 0 ? todaySales / todayOrderCount : 0;
+
+    return {
+      todaySales,
+      todayOrders: todayOrderCount,
+      lowStockCount,
+      activeProductCount,
+      todayTips,
+      averageOrderValue
+    };
+  }
+
+  async getSalesReport(startDate: Date, endDate: Date): Promise<any> {
+    const endOfDay = new Date(endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db.select({
+        totalSales: sum(sql<number>`cast(${orders.total} as real)`),
+        totalTips: sum(sql<number>`cast(${orders.tipAmount} as real)`),
+        orderCount: count(orders.id)
+      })
+      .from(orders)
+      .where(and(
+        gte(orders.createdAt, startDate),
+        lte(orders.createdAt, endOfDay),
+        eq(orders.status, "completed")
+      ));
+
+    const totalSales = Number(result[0]?.totalSales) || 0;
+    const totalTips = Number(result[0]?.totalTips) || 0;
+    const orderCount = Number(result[0]?.orderCount) || 0;
+    const averageOrderValue = orderCount > 0 ? totalSales / orderCount : 0;
+    
+    // Fetch individual orders for the report if needed
+    const detailedOrders = await db.select().from(orders)
+      .where(and(
+        gte(orders.createdAt, startDate),
+        lte(orders.createdAt, endOfDay),
+        eq(orders.status, "completed")
+      )).orderBy(desc(orders.createdAt));
+
+    return {
+      period: { startDate, endDate },
+      totalSales,
+      totalTips,
+      totalOrders: orderCount,
+      averageOrderValue,
+      orders: detailedOrders // Or a summary if full details are too much
+    };
+  }
+
+  async getEmployeeReport(employeeId?: number, startDate?: Date, endDate?: Date): Promise<any> {
+    const conditions = [];
+    if (employeeId !== undefined) {
+      conditions.push(eq(timeClockEvents.userId, employeeId));
+    }
+    if (startDate) {
+      conditions.push(gte(timeClockEvents.eventTime, startDate));
+    }
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      conditions.push(lte(timeClockEvents.eventTime, endOfDay));
+    }
+    
+    const clockEvents = await db.select()
+      .from(timeClockEvents)
+      .where(and(...conditions))
+      .orderBy(desc(timeClockEvents.eventTime));
+      
+    // This part needs to be recalculated based on events
+    const totalHours = 0; // Placeholder
+
+    return {
+      employeeId,
+      period: { startDate, endDate },
+      totalHours,
+      timeClockEvents: clockEvents
+    };
+  }
+}
+
+
+// Old MemStorage class - will be removed or heavily refactored/deleted
+// For now, keeping it to avoid breaking existing code that might still use it,
+// but the goal is to replace its usage entirely with DbStorage.
+class MemStorage implements IStorage {
+  // MemStorage is now mostly a stub and will have issues if used extensively.
+  // It's kept to satisfy the IStorage interface during transition.
+  private users: Map<number, UserWithRoles>;
+  private appRoles: Map<number, AppRole>; // Added for MemStorage
+  private userAppRoles: Map<string, UserAppRole>; // Key: "userId-roleId"
+  private timeClockEvents: Map<number, TimeClockEvent>;
   private categories: Map<number, Category>;
   private products: Map<number, Product>;
   private orders: Map<number, Order>;
@@ -136,10 +987,13 @@ export class MemStorage implements IStorage {
   private auditLogs: Map<number, AuditLog>;
   private settingsMap: Map<string, Setting>;
   private currentId: number;
+  private lastOrderNumberSuffix: number; // Added for sequential order numbers
 
   constructor() {
     this.users = new Map();
-    this.timeClocks = new Map();
+    this.appRoles = new Map();
+    this.userAppRoles = new Map();
+    this.timeClockEvents = new Map();
     this.categories = new Map();
     this.products = new Map();
     this.orders = new Map();
@@ -150,56 +1004,60 @@ export class MemStorage implements IStorage {
     this.auditLogs = new Map();
     this.settingsMap = new Map();
     this.currentId = 1;
+    this.lastOrderNumberSuffix = 0; // Initialize suffix
     
     this.initializeDefaultData();
   }
 
   private initializeDefaultData() {
     // Create default admin user
-    const adminUser: User = {
+    const adminUser: UserWithRoles = {
       id: 1,
-      username: "admin",
+      employeeCode: "00001", // Changed from username
       email: "admin@vendorpos.com",
-      passwordHash: "$2b$10$hashedpassword",
+      pinHash: "$2b$10$hashedpassword", // Changed from passwordHash
       firstName: "Admin",
       lastName: "User",
-      role: "admin",
+      // role: "admin", // Roles are now separate
       isActive: true,
       hourlyRate: null,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      roles: [{id: 99, name: "Admin (MemStorage)", description: "MemStorage Admin", category: "management_hybrid"}] // Simulated role
     };
     this.users.set(1, adminUser);
 
     // Create default manager
-    const managerUser: User = {
+    const managerUser: UserWithRoles = {
       id: 2,
-      username: "manager",
+      employeeCode: "12345", // Changed from username, matches seed
       email: "manager@vendorpos.com",
-      passwordHash: "$2b$10$hashedpassword",
+      pinHash: "$2b$10$hashedpassword", // Changed from passwordHash, seed script handles actual hashing
       firstName: "Manager",
       lastName: "User",
-      role: "manager",
+      // role: "manager",
       isActive: true,
       hourlyRate: "25.00",
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      roles: [{id: 100, name: "General Manager (GM) / Store Manager (MemStorage)", description: "MemStorage GM", category: "management_hybrid"}] // Simulated role
     };
     this.users.set(2, managerUser);
 
     // Create default employee
-    const employeeUser: User = {
+    const employeeUser: UserWithRoles = {
       id: 3,
-      username: "employee",
+      employeeCode: "00003", // Changed from username
       email: "employee@vendorpos.com",
-      passwordHash: "$2b$10$hashedpassword",
+      pinHash: "$2b$10$hashedpassword", // Changed from passwordHash
       firstName: "Employee",
       lastName: "User",
-      role: "employee",
+      // role: "employee",
       isActive: true,
       hourlyRate: "15.00",
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      roles: [{id: 101, name: "Server / Waiter / Waitress (MemStorage)", description: "MemStorage Server", category: "front_of_house_restaurant"}] // Simulated role
     };
     this.users.set(3, employeeUser);
 
@@ -323,7 +1181,8 @@ export class MemStorage implements IStorage {
       { key: "tips_enabled", value: "true", category: "payments", description: "Enable tip collection" },
       { key: "tip_suggestions", value: "15,18,20,25", category: "payments", description: "Default tip percentages" },
       { key: "split_payments_enabled", value: "true", category: "payments", description: "Allow split payments" },
-      { key: "manager_override_required", value: "true", category: "security", description: "Require manager for refunds/comps" }
+      { key: "manager_override_required", value: "true", category: "security", description: "Require manager for refunds/comps" },
+      { key: "held_orders_require_manager", value: "false", category: "orders", description: "Require manager to access held orders" }
     ];
 
     defaultSettings.forEach(setting => {
@@ -342,65 +1201,138 @@ export class MemStorage implements IStorage {
   // User methods
   async getUsers(): Promise<UserWithTimeClock[]> {
     const usersArray = Array.from(this.users.values());
-    const usersWithTimeClock: UserWithTimeClock[] = [];
-    
+    const result: UserWithTimeClock[] = [];
     for (const user of usersArray) {
-      const currentTimeClock = await this.getCurrentTimeClock(user.id);
-      const todayHours = await this.getTodayHours(user.id);
-      usersWithTimeClock.push({
-        ...user,
-        currentTimeClock,
-        todayHours
-      });
+        const timeClockEvents = await this.getTimeClockEvents(user.id);
+        result.push({
+            ...user, // UserWithRoles
+            timeClockEvents,
+        });
     }
-    
-    return usersWithTimeClock;
+    return result;
   }
 
-  async getUser(id: number): Promise<UserWithTimeClock | undefined> {
+  async getUser(id: number): Promise<UserWithRoles | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
-    
-    const currentTimeClock = await this.getCurrentTimeClock(id);
-    const todayHours = await this.getTodayHours(id);
-    
-    return {
-      ...user,
-      currentTimeClock,
-      todayHours
-    };
+    return {...user}; // Returns UserWithRoles
+  }
+  
+  async getUserByEmployeeCode(employeeCode: string): Promise<UserWithRoles | undefined> {
+    // Simulate fetching by employee code for MemStorage
+    return Array.from(this.users.values()).find(user => user.employeeCode === employeeCode);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.username === username);
+    // This method is problematic with the new schema (employeeCode is primary identifier).
+    // For MemStorage, let's assume it tries to find by email if username was meant as a unique identifier.
+    console.warn("MemStorage.getUserByUsername is deprecated and behavior might be unexpected. Trying to match by email.");
+    const userWithRoles = Array.from(this.users.values()).find(user => user.email === username);
+    if (userWithRoles) {
+      // Strip roles to match original User | undefined signature if needed, though IStorage might evolve this.
+      // For now, let's return the User part.
+      const { roles, ...userBase } = userWithRoles;
+      return userBase as User;
+    }
+    return undefined;
   }
 
   async createUser(user: InsertUser): Promise<User> {
     const id = this.currentId++;
-    const newUser: User = {
+    // Ensure InsertUser aligns with User schema (employeeCode, pinHash, no role)
+    const newUser: UserWithRoles = {
       id,
-      username: user.username,
+      employeeCode: user.employeeCode,
       email: user.email || null,
-      passwordHash: user.passwordHash,
+      pinHash: user.pinHash || null, // pinHash is optional
       firstName: user.firstName || null,
       lastName: user.lastName || null,
-      role: user.role || "employee",
-      isActive: user.isActive !== false,
+      isActive: user.isActive !== undefined ? user.isActive : true,
       hourlyRate: user.hourlyRate || null,
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      roles: [] // New users in MemStorage start with no roles unless explicitly added
     };
     this.users.set(id, newUser);
-    return newUser;
+    // Return type is User, so strip roles for now if strict adherence is needed.
+    const { roles, ...userBase } = newUser;
+    return userBase as User;
   }
 
   async updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined> {
     const existing = this.users.get(id);
     if (!existing) return undefined;
 
-    const updated = { ...existing, ...user, updatedAt: new Date() };
-    this.users.set(id, updated);
+    const updatedUser: UserWithRoles = {
+        ...existing,
+        ...(user.employeeCode && { employeeCode: user.employeeCode }),
+        ...(user.email && { email: user.email }),
+        ...(user.pinHash && { pinHash: user.pinHash }),
+        ...(user.firstName && { firstName: user.firstName }),
+        ...(user.lastName && { lastName: user.lastName }),
+        ...(user.isActive !== undefined && { isActive: user.isActive }),
+        ...(user.hourlyRate && { hourlyRate: user.hourlyRate }),
+        updatedAt: new Date(),
+        // roles are not updated here for MemStorage
+    };
+    
+    this.users.set(id, updatedUser);
+    const { roles, ...userBase } = updatedUser;
+    return userBase as User;
+  }
+
+  // MemStorage AppRoles stubs
+  async getAppRoles(): Promise<AppRole[]> { return Array.from(this.appRoles.values()); }
+  async getAppRole(id: number): Promise<AppRole | undefined> { return this.appRoles.get(id); }
+  async createAppRole(roleData: InsertAppRole): Promise<AppRole> {
+    const id = this.currentId++;
+    const newRole: AppRole = {
+      id,
+      name: roleData.name,
+      description: roleData.description === undefined ? null : roleData.description,
+      category: roleData.category === undefined ? null : roleData.category,
+    };
+    this.appRoles.set(id, newRole);
+    return newRole;
+  }
+  async updateAppRole(id: number, roleData: Partial<InsertAppRole>): Promise<AppRole | undefined> {
+    const existing = this.appRoles.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...roleData };
+    this.appRoles.set(id, updated);
     return updated;
+  }
+  async deleteAppRole(id: number): Promise<boolean> {
+    // Also remove from userAppRoles
+    Array.from(this.userAppRoles.entries()).forEach(([key, val]) => {
+      if (val.roleId === id) this.userAppRoles.delete(key);
+    });
+    return this.appRoles.delete(id);
+  }
+
+  // MemStorage UserAppRoles stubs
+  async assignRoleToUser(userId: number, roleId: number): Promise<UserAppRole> {
+    const assignment: UserAppRole = { userId, roleId };
+    this.userAppRoles.set(`${userId}-${roleId}`, assignment);
+    // Add to user's roles array in MemStorage
+    const user = this.users.get(userId);
+    const role = this.appRoles.get(roleId);
+    if (user && role && !user.roles.find(r => r.id === roleId)) {
+      user.roles.push(role);
+    }
+    return assignment;
+  }
+  async removeRoleFromUser(userId: number, roleId: number): Promise<boolean> {
+    // Remove from user's roles array in MemStorage
+    const user = this.users.get(userId);
+    if (user) {
+      user.roles = user.roles.filter(r => r.id !== roleId);
+    }
+    return this.userAppRoles.delete(`${userId}-${roleId}`);
+  }
+  async getUserRoles(userId: number): Promise<AppRole[]> {
+    const user = this.users.get(userId);
+    return user?.roles || [];
   }
 
   async deleteUser(id: number): Promise<boolean> {
@@ -408,72 +1340,39 @@ export class MemStorage implements IStorage {
   }
 
   // Time Clock methods
-  async clockIn(userId: number): Promise<TimeClock> {
+  async createTimeClockEvent(userId: number, eventType: "clock-in" | "clock-out" | "break-start" | "break-end"): Promise<TimeClockEvent> {
     const id = this.currentId++;
     const now = new Date();
-    const timeClock: TimeClock = {
+    const newEvent: TimeClockEvent = {
       id,
       userId,
-      clockIn: now,
-      clockOut: null,
-      breakDuration: 0,
-      totalHours: null,
-      date: now,
-      createdAt: now
+      eventType,
+      eventTime: now,
+      createdAt: now,
     };
-    this.timeClocks.set(id, timeClock);
-    return timeClock;
+    this.timeClockEvents.set(id, newEvent);
+    return newEvent;
   }
 
-  async clockOut(userId: number): Promise<TimeClock | undefined> {
-    const currentClock = await this.getCurrentTimeClock(userId);
-    if (!currentClock) return undefined;
-
-    const now = new Date();
-    const totalHours = (now.getTime() - currentClock.clockIn.getTime()) / (1000 * 60 * 60);
-    
-    currentClock.clockOut = now;
-    currentClock.totalHours = totalHours.toFixed(2);
-    
-    this.timeClocks.set(currentClock.id, currentClock);
-    return currentClock;
+  async getLatestTimeClockEvent(userId: number): Promise<TimeClockEvent | undefined> {
+    return Array.from(this.timeClockEvents.values())
+      .filter(e => e.userId === userId)
+      .sort((a, b) => b.eventTime.getTime() - a.eventTime.getTime())[0];
   }
 
-  async getCurrentTimeClock(userId: number): Promise<TimeClock | undefined> {
-    return Array.from(this.timeClocks.values())
-      .find(tc => tc.userId === userId && !tc.clockOut);
-  }
-
-  async getTodayHours(userId: number): Promise<number> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    const todayClocks = Array.from(this.timeClocks.values())
-      .filter(tc => 
-        tc.userId === userId && 
-        tc.date >= today && 
-        tc.date < tomorrow &&
-        tc.totalHours
-      );
-
-    return todayClocks.reduce((total, tc) => total + parseFloat(tc.totalHours || "0"), 0);
-  }
-
-  async getTimeClocks(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClock[]> {
-    let clocks = Array.from(this.timeClocks.values())
-      .filter(tc => tc.userId === userId);
+  async getTimeClockEvents(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClockEvent[]> {
+    let events = Array.from(this.timeClockEvents.values())
+      .filter(e => e.userId === userId);
 
     if (startDate) {
-      clocks = clocks.filter(tc => tc.date >= startDate);
+      events = events.filter(e => e.eventTime >= startDate);
     }
 
     if (endDate) {
-      clocks = clocks.filter(tc => tc.date <= endDate);
+      events = events.filter(e => e.eventTime <= endDate);
     }
 
-    return clocks.sort((a, b) => b.date.getTime() - a.date.getTime());
+    return events.sort((a, b) => b.eventTime.getTime() - a.eventTime.getTime());
   }
 
   // Category methods
@@ -512,22 +1411,26 @@ export class MemStorage implements IStorage {
   // Product methods
   async getProducts(): Promise<ProductWithCategory[]> {
     const productsArray = Array.from(this.products.values());
-    return productsArray.map(product => ({
-      ...product,
-      category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
-      modifications: (product.modificationOptions as any[]) || []
-    }));
+    return productsArray.map(product => {
+      const mods = product.modificationOptions as ProductModification[] | undefined | null;
+      return {
+        ...product,
+        category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
+        modificationOptions: mods || null
+      };
+    }) as ProductWithCategory[]; // Cast the whole result
   }
 
   async getProduct(id: number): Promise<ProductWithCategory | undefined> {
     const product = this.products.get(id);
     if (!product) return undefined;
     
+    const mods = product.modificationOptions as ProductModification[] | undefined | null;
     return {
       ...product,
       category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
-      modifications: (product.modificationOptions as any[]) || []
-    };
+      modificationOptions: mods || null
+    } as ProductWithCategory; // Cast the whole result
   }
 
   async createProduct(product: InsertProduct): Promise<Product> {
@@ -580,8 +1483,13 @@ export class MemStorage implements IStorage {
   }
 
   // Order methods
-  async getOrders(): Promise<OrderWithDetails[]> {
-    const ordersArray = Array.from(this.orders.values());
+  async getOrders(filters?: { status?: string }): Promise<OrderWithDetails[]> {
+    let ordersArray = Array.from(this.orders.values());
+
+    if (filters?.status) {
+      ordersArray = ordersArray.filter(order => order.status === filters.status);
+    }
+
     const ordersWithDetails: OrderWithDetails[] = [];
 
     for (const order of ordersArray) {
@@ -622,12 +1530,13 @@ export class MemStorage implements IStorage {
     };
   }
 
-  async createOrder(order: InsertOrder): Promise<Order> {
+  async createOrder(order: InsertOrderApiPayload): Promise<Order> { // Modified parameter type
     const id = this.currentId++;
-    const orderNumber = `ORD-${Date.now()}`;
-    const newOrder: Order = { 
+    this.lastOrderNumberSuffix++; // Increment for a new order
+    const orderNumber = `ORD-${String(this.lastOrderNumberSuffix).padStart(6, '0')}`; // Generate sequential number
+    const newOrder: Order = {
       id,
-      orderNumber,
+      orderNumber, // Use server-generated number
       customerName: order.customerName || null,
       customerPhone: order.customerPhone || null,
       customerEmail: order.customerEmail || null,
@@ -972,29 +1881,30 @@ export class MemStorage implements IStorage {
   }
 
   async getEmployeeReport(userId?: number, startDate?: Date, endDate?: Date): Promise<any> {
-    let timeClocks = Array.from(this.timeClocks.values());
+    let timeClockEvents = Array.from(this.timeClockEvents.values());
     
     if (userId) {
-      timeClocks = timeClocks.filter(tc => tc.userId === userId);
+      timeClockEvents = timeClockEvents.filter(tc => tc.userId === userId);
     }
     
     if (startDate) {
-      timeClocks = timeClocks.filter(tc => tc.date >= startDate);
+      timeClockEvents = timeClockEvents.filter(tc => tc.eventTime >= startDate);
     }
     
     if (endDate) {
-      timeClocks = timeClocks.filter(tc => tc.date <= endDate);
+      timeClockEvents = timeClockEvents.filter(tc => tc.eventTime <= endDate);
     }
 
-    const totalHours = timeClocks.reduce((sum, tc) => sum + parseFloat(tc.totalHours || "0"), 0);
+    const totalHours = 0; // Placeholder
     
     return {
       userId,
       period: { startDate, endDate },
       totalHours,
-      timeClocks: timeClocks.sort((a, b) => b.date.getTime() - a.date.getTime())
+      timeClockEvents: timeClockEvents.sort((a, b) => b.eventTime.getTime() - a.eventTime.getTime())
     };
   }
 }
 
-export const storage = new MemStorage();
+// export const storage = new MemStorage(); // Comment out old MemStorage
+export const storage = new DbStorage(); // Use DbStorage

@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -202,11 +203,14 @@ export default function ProductModal({ open, onOpenChange, product }: ProductMod
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {product ? "Edit Product" : "Add New Product"}
-          </DialogTitle>
-        </DialogHeader>
+           {product ? "Edit Product" : "Add New Product"}
+         </DialogTitle>
+         <DialogDescription>
+           {product ? "Edit the details of the existing product." : "Add a new product to your inventory."}
+         </DialogDescription>
+       </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+       <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <Label htmlFor="name">Product Name</Label>
