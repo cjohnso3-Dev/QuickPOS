@@ -878,10 +878,7 @@ export default function OrderingPage() {
 
             {/* Actions */}
             <div className="flex items-center gap-2 ml-4">
-              <Button variant="outline" size="sm">
-                <Plus className="h-4 w-4 mr-1" />
-                Add Customer
-              </Button>
+              
               <Button
                 variant="outline"
                 size="sm"
@@ -908,9 +905,7 @@ export default function OrderingPage() {
                   </Badge>
                 )}
               </Button>
-              <Button variant="outline" size="sm" className="bg-orange-500 text-white border-orange-500 hover:bg-orange-600">
-                Select Table
-              </Button>
+              
             </div>
           </div>
         </div>

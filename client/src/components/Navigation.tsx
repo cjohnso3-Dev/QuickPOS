@@ -30,7 +30,6 @@ const hasRequiredRole = (user: UserWithRoles | null, requiredRoles: string[]): b
   return user.roles.some(role => requiredRoles.includes(role.name));
 };
 
-
 // Helper Component: Renders the current time (always visible)
 const CurrentTime = () => {
   const [time, setTime] = useState(new Date());
@@ -100,12 +99,14 @@ export default function Navigation() { // Renamed from PosHeaderToggle to Naviga
     return currentUser?.firstName?.[0] || "U";
   };
 
-  // Define roles that have admin access for navigation visibility
   // Define roles that have access to the "Ordering" option
   const posRoles = [
     'Manager',
     'Cashier',
     'Server',
+    'General Manager (GM) / Store Manager', // Add GM role for POS access
+    'Assistant Manager', // Add Assistant Manager role for POS access
+    'admin', // Add admin role for POS access
   ];
 
   const hasPosAccess = hasRequiredRole(currentUser, posRoles);
@@ -156,7 +157,6 @@ export default function Navigation() { // Renamed from PosHeaderToggle to Naviga
             )}
 
         </nav>
-
 
         {/* --- Right Side: Status Info & User Menu --- */}
         <div className="flex items-center gap-4 sm:gap-6">
