@@ -10,10 +10,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { X, CreditCard, DollarSign, Users, PercentIcon } from 'lucide-react';
 import type { CartItem as CartItemType, TipOption, PaymentSplit, OrderWithDetails } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
-// import { loadStripe, StripeElementsOptions } from '@stripe/stripe-js';
-// import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
-// const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
+// Ensure VITE_STRIPE_PUBLISHABLE_KEY is set in your .env file
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "");
 
 interface CheckoutDialogProps {
   open: boolean;
@@ -44,7 +45,8 @@ const defaultTipOptions: TipOption[] = [
   { label: 'No Tip' },
 ];
 
-export function CheckoutDialog({
+// Renamed to CheckoutDialogContent to be wrapped by Elements provider
+function CheckoutDialogContent({
   open,
   onOpenChange,
   orderSubtotal,
@@ -63,8 +65,8 @@ export function CheckoutDialog({
   const [processingPayment, setProcessingPayment] = useState(false);
   const [cardPaymentError, setCardPaymentError] = useState<string | null>(null);
 
-  // const stripe = useStripe();
-  // const elements = useElements();
+  const stripe = useStripe();
+  const elements = useElements();
 
   const calculatedTip = useMemo(() => {
     if (!selectedTipOption) return 0;
@@ -123,22 +125,74 @@ export function CheckoutDialog({
         changeGiven: changeDue,
       });
     } else if (paymentMethod === 'card') {
-      // Stripe payment logic will go here
-      // For now, simulate success
-      toast({ title: "Card Payment Placeholder", description: "Stripe integration needed." });
-      setTimeout(() => {
-         onPaymentSuccess({
-          paymentMethod: 'card',
-          tipAmount: calculatedTip,
-          totalAmount: finalTotal,
-          stripePaymentId: 'pi_placeholder_' + Date.now(),
-        });
+      if (!stripe || !elements) {
+        toast({ title: "Stripe not loaded", description: "Please try again in a moment.", variant: "destructive" });
         setProcessingPayment(false);
-      }, 1500);
+        return;
+      }
+
+      const cardElement = elements.getElement(CardElement);
+      if (!cardElement) {
+        toast({ title: "Card element not found", description: "Please ensure card details are entered correctly.", variant: "destructive" });
+        setProcessingPayment(false);
+        return;
+      }
+
+      try {
+        // 1. Create Payment Intent on the server
+        const response = await fetch('/api/create-payment-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount: finalTotal }), // Send amount in dollars, backend will convert to cents
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to create payment intent');
+        }
+
+        const { client_secret: clientSecret, payment_intent_id: paymentIntentId } = await response.json();
+
+        if (!clientSecret) {
+          throw new Error('Client secret not received from server.');
+        }
+
+        // 2. Confirm Card Payment
+        const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: {
+            card: cardElement,
+            billing_details: { name: customerName || 'Customer' }, // Optional: Add customer name
+          },
+        });
+
+        if (error) {
+          setCardPaymentError(error.message || "An unexpected error occurred during card payment.");
+          toast({ title: "Payment Failed", description: error.message || "Please try again.", variant: "destructive" });
+          setProcessingPayment(false);
+        } else if (paymentIntent?.status === 'succeeded') {
+          onPaymentSuccess({
+            paymentMethod: 'card',
+            tipAmount: calculatedTip,
+            totalAmount: finalTotal,
+            stripePaymentId: paymentIntent.id,
+          });
+          toast({ title: "Payment Successful!", variant: "default" });
+          setProcessingPayment(false);
+        } else {
+          setCardPaymentError("Payment not successful. Status: " + paymentIntent?.status);
+          toast({ title: "Payment Not Successful", description: "Status: " + paymentIntent?.status, variant: "destructive" });
+          setProcessingPayment(false);
+        }
+      } catch (error: any) {
+        console.error("Payment processing error:", error);
+        setCardPaymentError(error.message || "An error occurred while processing your payment.");
+        toast({ title: "Payment Error", description: error.message || "Please try again.", variant: "destructive" });
+        setProcessingPayment(false);
+      }
+
     } else if (paymentMethod === 'split') {
-      // Split payment logic
-      toast({ title: "Split Payment Placeholder", description: "Split payment UI and logic needed." });
-      setProcessingPayment(false); // Placeholder
+      toast({ title: "Split Payment UI Placeholder", description: "UI for specifying split amounts and methods is needed." });
+      setProcessingPayment(false);
     }
   };
   
@@ -239,9 +293,13 @@ export function CheckoutDialog({
                   <TabsTrigger value="split" className="text-sm"><Users className="w-4 h-4 mr-1 inline-block"/>Split</TabsTrigger>
                 </TabsList>
                 <TabsContent value="card" className="mt-4">
-                  <div className="p-4 border rounded-md bg-gray-50 min-h-[100px] flex items-center justify-center">
-                    {/* <CardElement options={{ hidePostalCode: true }} /> */}
-                    <p className="text-gray-500">Stripe Card Element will be here.</p>
+                  <div className="p-4 border rounded-md bg-gray-50 min-h-[100px]">
+                    <CardElement options={{
+                      style: {
+                        base: { fontSize: '16px' }
+                      },
+                      hidePostalCode: true
+                    }} />
                   </div>
                   {cardPaymentError && <p className="text-red-500 text-sm mt-2">{cardPaymentError}</p>}
                 </TabsContent>
@@ -264,8 +322,10 @@ export function CheckoutDialog({
                   )}
                 </TabsContent>
                 <TabsContent value="split" className="mt-4">
-                   <div className="p-4 border rounded-md bg-gray-50 min-h-[100px] flex items-center justify-center">
-                    <p className="text-gray-500">Split payment UI will be here.</p>
+                   <div className="p-4 border rounded-md bg-gray-50 min-h-[100px] flex flex-col items-center justify-center">
+                    <Users className="w-12 h-12 text-gray-400 mb-2" />
+                    <p className="text-gray-500 text-center">UI for specifying split amounts and payment methods is needed.</p>
+                    <p className="text-xs text-gray-400 mt-1">This feature is not yet implemented.</p>
                   </div>
                 </TabsContent>
               </Tabs>
@@ -295,11 +355,28 @@ export function CheckoutDialog({
   );
 }
 
-// If using Stripe, wrap with Elements provider at a higher level or here if localized
-// export default function CheckoutDialogWrapper(props: CheckoutDialogProps) {
-//   return (
-//     <Elements stripe={stripePromise}>
-//       <CheckoutDialog {...props} />
-//     </Elements>
-//   );
-// }
+// Wrapper component that provides the Elements context
+export default function CheckoutDialogWrapper(props: CheckoutDialogProps) {
+  if (!import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY) {
+    console.error("Stripe publishable key is not set. Please set VITE_STRIPE_PUBLISHABLE_KEY in your .env file.");
+    // Optionally, render a message to the user or handle this error more gracefully
+    return (
+      <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configuration Error</DialogTitle>
+          </DialogHeader>
+          <p className="py-4">Stripe payments cannot be processed at this time. Please contact support.</p>
+          <DialogFooter>
+            <Button onClick={() => props.onOpenChange(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  return (
+    <Elements stripe={stripePromise}>
+      <CheckoutDialogContent {...props} />
+    </Elements>
+  );
+}

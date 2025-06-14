@@ -66,18 +66,18 @@ const RoleBasedProtectedRoute: React.FC<RoleBasedProtectedRouteProps> = ({
 
 function AppRouter() {
   const { currentUser, isLoading } = useAuth();
+  const [location] = useLocation(); // Get current location
 
   if (isLoading) {
     return <LoadingSpinner />;
   }
 
-  // Your screenshot of OrderingPage shows a self-contained layout with its own sidebar navigation.
-  // This global <Navigation /> component might be unnecessary or might conflict with the OrderingPage UI.
-  // You may want to remove it or render it conditionally if it's not needed on the ordering screen.
-  // For now, we'll leave it as is.
+  // Define paths where the global Navigation should not be rendered
+  const noNavPaths = ['/ordering', '/login'];
+
   return (
     <>
-      {currentUser ? (<Navigation />) : (null)}
+      {currentUser && !noNavPaths.includes(location) ? <Navigation /> : null}
       <Switch>
         <Route path="/login" component={LoginPage} />
 

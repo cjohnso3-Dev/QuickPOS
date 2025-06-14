@@ -137,6 +137,52 @@ export default function OrderingPage() {
     },
   });
 
+  const deleteOrderItemsMutation = useMutation<unknown, Error, { orderId: number }>({
+    mutationFn: async ({ orderId }) => {
+      // This endpoint needs to be created on the backend.
+      // It should delete all order items associated with the given orderId.
+      const response = await fetch(`/api/orders/${orderId}/items`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to delete order items" }));
+        throw new Error(errorData.message || "Failed to delete order items for update");
+      }
+      return response.json();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to Update Order Items",
+        description: `Could not clear previous items for the order: ${error.message}`,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateOrderToCompletedMutation = useMutation<Order, Error, { orderId: number; finalOrderData: Partial<InsertOrder> & { stripePaymentId?: string } }>({
+    mutationFn: async ({ orderId, finalOrderData }) => {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(finalOrderData),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to update order to completed" }));
+        throw new Error(errorData.message || "Failed to update order to completed");
+      }
+      return response.json();
+    },
+    // onSuccess for updateOrderToCompletedMutation will be handled within handlePaymentSuccess
+    // to orchestrate item creation and UI reset.
+    onError: (error: Error) => {
+      toast({
+        title: "Order Completion Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const createOrderMutation = useMutation<Order, Error, Omit<InsertOrderApiPayload, 'items'>>({ // items will be handled separately, use InsertOrderApiPayload
     mutationFn: async (orderData: Omit<InsertOrderApiPayload, 'items'>) => { // Use InsertOrderApiPayload
       const response = await fetch("/api/orders", {
@@ -187,10 +233,8 @@ export default function OrderingPage() {
     },
   });
 
-  // Placeholder for createOrderItemMutation
   const createOrderItemMutation = useMutation({
-    mutationFn: async (orderItemData: { orderId: number; productId: number; quantity: number; unitPrice: string; totalPrice: string; modifications?: any[]; specialInstructions?: string; }) => {
-      // This endpoint needs to be created on the backend
+    mutationFn: async (orderItemData: { orderId: number; productId: number; quantity: number; unitPrice: string; totalPrice: string; modifications?: string | null; specialInstructions?: string; }) => {
       const response = await fetch(`/api/order-items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -262,102 +306,115 @@ export default function OrderingPage() {
       return;
     }
     setProcessingPayment(true);
+    const currentUserId = users.find(u => u.role === 'employee')?.id ?? users.find(u => u.role === 'manager')?.id ?? 1; // Placeholder for actual auth context
 
-    let orderDataForMutation: Omit<InsertOrderApiPayload, 'items'>; // Use InsertOrderApiPayload
-    // Dummy user ID, replace with actual authenticated user ID
-    const currentUserId = users.find(u => u.role === 'employee')?.id ?? users.find(u => u.role === 'manager')?.id ?? 1;
-
-
-    if ('id' in currentOrderForCheckout && currentOrderForCheckout.id && 'orderNumber' in currentOrderForCheckout && currentOrderForCheckout.orderNumber) {
-      // This case means we are completing an existing HELD order that already has an orderNumber from the server.
-      // We need to ensure we pass this existing orderNumber if we are updating the order to COMPLETED.
-      // However, the createOrderMutation is for creating new orders or finalizing PENDING_PAYMENT orders
-      // that don't yet have a server-side ID.
-      // For updating a HELD order to COMPLETED, we should ideally use an updateOrderMutation.
-      // For now, if it's a HELD order being completed, we'll prepare data for createOrder,
-      // but the server's createOrder will generate a *new* orderNumber. This is not ideal for "completing"
-      // a HELD order by its original number. This part needs rethinking if we want to preserve orderNumber
-      // when moving from HELD to COMPLETED via this flow.
-      // The current setup implies that "Proceed to Payment" from a loaded HELD order effectively creates a new COMPLETED order.
-
-      const existingOrder = currentOrderForCheckout as OrderWithDetails; // It has an ID and orderNumber
-      const currentSubtotal = calculateDiscountedTotal();
-      const currentTax = currentSubtotal * 0.08;
-      const currentDiscountAmount = (calculateTotal() - currentSubtotal);
-      
-      // This path will create a NEW order record with a NEW order number.
-      // If the intent was to update the HELD order to COMPLETED, this is incorrect.
-      // We are sending data that looks like a new order, minus the orderNumber.
-      orderDataForMutation = {
-        // orderNumber: existingOrder.orderNumber, // DO NOT SEND - server generates
-        customerName: existingOrder.customerName || "Walk-in Customer",
-        customerPhone: existingOrder.customerPhone,
-        customerEmail: existingOrder.customerEmail,
-        orderType: existingOrder.orderType,
-        tableNumber: existingOrder.tableNumber,
-        notes: existingOrder.notes,
-        subtotal: currentSubtotal.toString(),
-        tax: currentTax.toString(),
-        discountAmount: currentDiscountAmount.toString(),
-        tipAmount: paymentDetails.tipAmount.toString(),
-        total: paymentDetails.totalAmount.toString(),
+    if (currentOrderForCheckout && 'id' in currentOrderForCheckout && currentOrderForCheckout.id) {
+      // This is an existing HELD order being completed
+      const existingOrderId = currentOrderForCheckout.id;
+      const finalOrderData: Partial<InsertOrder> & { stripePaymentId?: string } = {
         status: 'COMPLETED',
-        createdBy: existingOrder.createdByUser?.id ?? (typeof existingOrder.createdBy === 'number' ? existingOrder.createdBy : currentUserId),
-        managedBy: existingOrder.managedByUser?.id ?? (typeof existingOrder.managedBy === 'number' ? existingOrder.managedBy : (isManagerAuthorized ? currentUserId : undefined)),
+        tipAmount: paymentDetails.tipAmount.toString(),
+        total: paymentDetails.totalAmount.toString(), // Grand total including tip
+        // Include other payment-specific fields if your schema supports them, e.g.,
+        stripePaymentId: paymentDetails.stripePaymentId,
+        // customerName, subtotal, tax, discountAmount should ideally be part of the order already
+        // or recalculated if cart was editable. For now, assume they are on currentOrderForCheckout.
+        // However, it's safer to use fresh calculations if cart was mutable:
+        subtotal: calculateDiscountedTotal().toString(),
+        tax: (calculateDiscountedTotal() * 0.08).toString(),
+        discountAmount: (calculateTotal() - calculateDiscountedTotal()).toString(),
+        managedBy: isManagerAuthorized ? currentUserId : (currentOrderForCheckout as OrderWithDetails).managedByUser?.id, // Preserve or update manager
       };
+
+      deleteOrderItemsMutation.mutate({ orderId: existingOrderId }, {
+        onSuccess: () => {
+          updateOrderToCompletedMutation.mutate({ orderId: existingOrderId, finalOrderData }, {
+            onSuccess: (updatedOrder) => {
+              toast({ title: "Order Completed!", description: `Order ${updatedOrder.orderNumber} has been paid and completed.` });
+              cart.forEach(cartItem => {
+                createOrderItemMutation.mutate({
+                  orderId: updatedOrder.id!,
+                  productId: cartItem.product.id,
+                  quantity: cartItem.quantity,
+                  unitPrice: cartItem.unitPrice.toString(),
+                  totalPrice: cartItem.totalPrice.toString(),
+                  modifications: cartItem.modifications && cartItem.modifications.length > 0 ? JSON.stringify(cartItem.modifications) : null,
+                  specialInstructions: cartItem.specialInstructions,
+                });
+              });
+              setCart([]);
+              setCustomerName("Walk-in Customer");
+              setAppliedDiscount(null);
+              setTipAmount(0);
+              setCurrentOrderForCheckout(null);
+              setShowCheckout(false);
+              queryClient.invalidateQueries({ queryKey: ["/api/orders/held"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/orders", existingOrderId.toString()] });
+              setProcessingPayment(false);
+            },
+            onError: (error) // Error from updateOrderToCompletedMutation
+             => {
+              setProcessingPayment(false);
+              // Toast is handled by the mutation's own onError
+            }
+          });
+        },
+        onError: (error) => { // Error from deleteOrderItemsMutation
+          setProcessingPayment(false);
+          // Toast is handled by the mutation's own onError, but we might add more context here if needed.
+          toast({ title: "Order Completion Failed", description: "Could not update items for the order. Please try again.", variant: "destructive"});
+        }
+      });
 
     } else {
-       // This is for a new order (not previously HELD) or a PENDING_PAYMENT order from handleProceedToPayment
-       // currentOrderForCheckout should be of type Omit<InsertOrderApiPayload, 'items'> here
-       const newOrderDraft = currentOrderForCheckout as Omit<InsertOrderApiPayload, 'items'>;
-       orderDataForMutation = {
-        customerName: newOrderDraft.customerName,
-        orderType: newOrderDraft.orderType,
-        subtotal: newOrderDraft.subtotal,
-        tax: newOrderDraft.tax,
-        discountAmount: newOrderDraft.discountAmount,
+      // This is a new order (was PENDING_PAYMENT, or direct checkout)
+      const newOrderDraft = currentOrderForCheckout as Omit<InsertOrderApiPayload, 'items'>; // Should have been set in handleProceedToPayment
+      const orderDataForCreation: Omit<InsertOrderApiPayload, 'items'> = {
+        customerName: newOrderDraft.customerName || customerName, // Use current customerName if draft is minimal
+        orderType: newOrderDraft.orderType || "takeout",
+        subtotal: newOrderDraft.subtotal || calculateDiscountedTotal().toString(),
+        tax: newOrderDraft.tax || (calculateDiscountedTotal() * 0.08).toString(),
+        discountAmount: newOrderDraft.discountAmount || (calculateTotal() - calculateDiscountedTotal()).toString(),
         tipAmount: paymentDetails.tipAmount.toString(),
         total: paymentDetails.totalAmount.toString(),
         status: 'COMPLETED',
-        createdBy: currentUserId, // Current user creates this new order
-        managedBy: isManagerAuthorized ? currentUserId : undefined, // Current manager if authorized
+        createdBy: currentUserId,
+        managedBy: isManagerAuthorized ? currentUserId : undefined,
+        // Add stripePaymentId to the order data if your backend schema supports it directly on order creation
+        // For now, assuming it's logged via payment record linked to order, or handled by backend if passed
       };
-    }
-    
-    createOrderMutation.mutate(orderDataForMutation, {
-      onSuccess: (createdOrder) => {
-        if (createdOrder && createdOrder.id) {
-          // Persist the full order details (including server-generated orderNumber)
-          const fullOrderContext = { ...createdOrder, items: cart.map(ci => ({...ci.product, quantity: ci.quantity, unitPrice: ci.unitPrice.toString(), totalPrice: ci.totalPrice.toString(), modifications: ci.modifications, specialInstructions: ci.specialInstructions })) };
-          setCurrentOrderForCheckout(fullOrderContext as unknown as OrderWithDetails);
 
+      createOrderMutation.mutate(orderDataForCreation, {
+        onSuccess: (createdOrder) => {
+          if (createdOrder && createdOrder.id) {
+            const fullOrderContext = { ...createdOrder, items: cart.map(ci => ({...ci.product, quantity: ci.quantity, unitPrice: ci.unitPrice.toString(), totalPrice: ci.totalPrice.toString(), modifications: ci.modifications, specialInstructions: ci.specialInstructions })) };
+            setCurrentOrderForCheckout(fullOrderContext as unknown as OrderWithDetails); // Update context
 
-          // Create order items associated with this newly created order
-          cart.forEach(cartItem => {
-            createOrderItemMutation.mutate({
-              orderId: createdOrder.id!,
-              productId: cartItem.product.id,
-              quantity: cartItem.quantity,
-              unitPrice: cartItem.unitPrice.toString(),
-              totalPrice: cartItem.totalPrice.toString(),
-              modifications: cartItem.modifications,
-              specialInstructions: cartItem.specialInstructions,
+            cart.forEach(cartItem => {
+              createOrderItemMutation.mutate({
+                orderId: createdOrder.id!,
+                productId: cartItem.product.id,
+                quantity: cartItem.quantity,
+                unitPrice: cartItem.unitPrice.toString(),
+                totalPrice: cartItem.totalPrice.toString(),
+                modifications: cartItem.modifications && cartItem.modifications.length > 0 ? JSON.stringify(cartItem.modifications) : null,
+                specialInstructions: cartItem.specialInstructions,
+              });
             });
+            // UI reset is handled by global onSuccess of createOrderMutation if status is COMPLETED
+          }
+          setProcessingPayment(false); // Ensure this is set
+        },
+        onError: (error) => {
+          setProcessingPayment(false);
+          toast({
+            title: "Order Creation Failed",
+            description: error.message || "Could not finalize the new order.",
+            variant: "destructive",
           });
-          // Global onSuccess will handle toast and, if status is COMPLETED, cart clearing & UI reset.
         }
-        setProcessingPayment(false);
-      },
-      onError: (error) => {
-        setProcessingPayment(false);
-        // Global onError of createOrderMutation handles toast
-        toast({
-          title: "Payment Finalization Failed",
-          description: error.message || "Could not finalize the order after payment.",
-          variant: "destructive",
-        });
-      }
-    });
+      });
+    }
   };
 
   const handlePaymentCancel = () => {
@@ -536,9 +593,9 @@ export default function OrderingPage() {
                 orderId: createdOrder.id!,
                 productId: cartItem.product.id,
                 quantity: cartItem.quantity,
-                unitPrice: cartItem.unitPrice.toString(),
-                totalPrice: cartItem.totalPrice.toString(),
-                modifications: cartItem.modifications,
+                unitPrice: cartItem.unitPrice.toString(), // Ensure string
+                totalPrice: cartItem.totalPrice.toString(), // Ensure string
+                modifications: cartItem.modifications && cartItem.modifications.length > 0 ? JSON.stringify(cartItem.modifications) : null,
                 specialInstructions: cartItem.specialInstructions,
               });
             });
@@ -732,9 +789,9 @@ export default function OrderingPage() {
                   orderId: heldCurrentOrder.id!, // Use the ID of the order just put on hold
                   productId: cartItem.product.id,
                   quantity: cartItem.quantity,
-                  unitPrice: cartItem.unitPrice.toString(),
-                  totalPrice: cartItem.totalPrice.toString(),
-                  modifications: cartItem.modifications,
+                  unitPrice: cartItem.unitPrice.toString(), // Ensure string
+                  totalPrice: cartItem.totalPrice.toString(), // Ensure string
+                  modifications: cartItem.modifications && cartItem.modifications.length > 0 ? JSON.stringify(cartItem.modifications) : null,
                   specialInstructions: cartItem.specialInstructions,
                 });
               });

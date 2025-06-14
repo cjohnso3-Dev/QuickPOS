@@ -59,7 +59,6 @@ export interface IStorage {
   getUsers(): Promise<UserWithTimeClock[]>; // Correctly returns UserWithTimeClock[]
   getUser(id: number): Promise<UserWithTimeClock | undefined>;
   getUserByEmployeeCode(employeeCode: string): Promise<UserWithRoles | undefined>; // New method
-  getUserByUsername(username: string): Promise<User | undefined>; // This might be deprecated or changed
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
   deleteUser(id: number): Promise<boolean>;
@@ -226,16 +225,6 @@ export class DbStorage implements IStorage {
       timeClockEvents,
     };
     return userToReturn;
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    // This method is likely deprecated in favor of getUserByEmployeeCode.
-    // If it needs to be kept, it should be defined what 'username' refers to (e.g., email).
-    console.warn("DbStorage.getUserByUsername() is deprecated. Use getUserByEmployeeCode or clarify username field.");
-    // Example: find by email if username is treated as email
-    // const result = await db.select().from(users).where(eq(users.email, username)).limit(1);
-    // return result[0];
-    return undefined;
   }
 
   async createUser(userData: InsertUser): Promise<User> {
@@ -949,959 +938,93 @@ export class DbStorage implements IStorage {
       conditions.push(lte(timeClockEvents.eventTime, endOfDay));
     }
     
+    // Fetch events in ascending order for chronological processing
     const clockEvents = await db.select()
       .from(timeClockEvents)
       .where(and(...conditions))
-      .orderBy(desc(timeClockEvents.eventTime));
+      .orderBy(asc(timeClockEvents.eventTime));
       
-    // This part needs to be recalculated based on events
-    const totalHours = 0; // Placeholder
+    let totalWorkMillis = 0;
+    let totalBreakMillis = 0;
+    let currentClockInTime: Date | null = null;
+    let onBreak = false;
+    let breakStartTime: Date | null = null;
+
+    for (const event of clockEvents) {
+      const eventTime = new Date(event.eventTime); // Ensure eventTime is a Date object
+
+      switch (event.eventType) {
+        case 'clock-in':
+          if (!currentClockInTime) { // Only clock in if not already clocked in
+            currentClockInTime = eventTime;
+            onBreak = false; // Reset break status on new clock-in
+            breakStartTime = null;
+          } else {
+            // Handle data error: multiple clock-ins without clock-out
+            console.warn(`Data Error: User ${employeeId} clocked in again at ${eventTime} without clocking out from ${currentClockInTime}.`);
+            // Optionally, could treat this as a new session, effectively clocking out the previous one.
+            // For now, we'll stick to the first clock-in.
+          }
+          break;
+        case 'break-start':
+          if (currentClockInTime && !onBreak) {
+            breakStartTime = eventTime;
+            onBreak = true;
+          }
+          break;
+        case 'break-end':
+          if (currentClockInTime && onBreak && breakStartTime) {
+            totalBreakMillis += eventTime.getTime() - breakStartTime.getTime();
+            onBreak = false;
+            breakStartTime = null;
+          }
+          break;
+        case 'clock-out':
+          if (currentClockInTime) {
+            let workSegmentMillis = eventTime.getTime() - currentClockInTime.getTime();
+
+            if (onBreak && breakStartTime) {
+              // If user clocked out while on break, end the break at clock-out time
+              const currentBreakSegmentMillis = eventTime.getTime() - breakStartTime.getTime();
+              totalBreakMillis += currentBreakSegmentMillis;
+              onBreak = false;
+              breakStartTime = null;
+            }
+            totalWorkMillis += workSegmentMillis;
+            currentClockInTime = null; // Reset for next session
+          } else {
+            // Handle data error: clock-out without clock-in
+             console.warn(`Data Error: User ${employeeId} clocked out at ${eventTime} without a corresponding clock-in.`);
+          }
+          break;
+      }
+    }
+
+    // If employee is still clocked in at the end of the report period (or current time if endDate is future)
+    if (currentClockInTime) {
+      const periodEnd = (endDate && endDate < new Date()) ? new Date(endDate) : new Date();
+      // Ensure periodEnd is not before currentClockInTime
+      const effectiveEndTime = periodEnd > currentClockInTime ? periodEnd : currentClockInTime;
+
+      let lastSegmentMillis = effectiveEndTime.getTime() - currentClockInTime.getTime();
+      
+      if (onBreak && breakStartTime) {
+        // If still on break, calculate break time up to periodEnd
+        const breakDurationMillis = effectiveEndTime.getTime() - breakStartTime.getTime();
+        totalBreakMillis += breakDurationMillis;
+      }
+      totalWorkMillis += lastSegmentMillis;
+    }
+    
+    const netWorkMillis = totalWorkMillis - totalBreakMillis;
+    // Ensure netWorkMillis is not negative due to data errors or overlapping breaks.
+    const totalHours = Math.max(0, netWorkMillis / (1000 * 60 * 60));
 
     return {
       employeeId,
       period: { startDate, endDate },
       totalHours,
       timeClockEvents: clockEvents
-    };
-  }
-}
-
-
-// Old MemStorage class - will be removed or heavily refactored/deleted
-// For now, keeping it to avoid breaking existing code that might still use it,
-// but the goal is to replace its usage entirely with DbStorage.
-class MemStorage implements IStorage {
-  // MemStorage is now mostly a stub and will have issues if used extensively.
-  // It's kept to satisfy the IStorage interface during transition.
-  private users: Map<number, UserWithRoles>;
-  private appRoles: Map<number, AppRole>; // Added for MemStorage
-  private userAppRoles: Map<string, UserAppRole>; // Key: "userId-roleId"
-  private timeClockEvents: Map<number, TimeClockEvent>;
-  private categories: Map<number, Category>;
-  private products: Map<number, Product>;
-  private orders: Map<number, Order>;
-  private orderItems: Map<number, OrderItem>;
-  private payments: Map<number, Payment>;
-  private discounts: Map<number, Discount>;
-  private taxRates: Map<number, TaxRate>;
-  private auditLogs: Map<number, AuditLog>;
-  private settingsMap: Map<string, Setting>;
-  private currentId: number;
-  private lastOrderNumberSuffix: number; // Added for sequential order numbers
-
-  constructor() {
-    this.users = new Map();
-    this.appRoles = new Map();
-    this.userAppRoles = new Map();
-    this.timeClockEvents = new Map();
-    this.categories = new Map();
-    this.products = new Map();
-    this.orders = new Map();
-    this.orderItems = new Map();
-    this.payments = new Map();
-    this.discounts = new Map();
-    this.taxRates = new Map();
-    this.auditLogs = new Map();
-    this.settingsMap = new Map();
-    this.currentId = 1;
-    this.lastOrderNumberSuffix = 0; // Initialize suffix
-    
-    this.initializeDefaultData();
-  }
-
-  private initializeDefaultData() {
-    // Create default admin user
-    const adminUser: UserWithRoles = {
-      id: 1,
-      employeeCode: "00001", // Changed from username
-      email: "admin@vendorpos.com",
-      pinHash: "$2b$10$hashedpassword", // Changed from passwordHash
-      firstName: "Admin",
-      lastName: "User",
-      // role: "admin", // Roles are now separate
-      isActive: true,
-      hourlyRate: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      roles: [{id: 99, name: "Admin (MemStorage)", description: "MemStorage Admin", category: "management_hybrid"}] // Simulated role
-    };
-    this.users.set(1, adminUser);
-
-    // Create default manager
-    const managerUser: UserWithRoles = {
-      id: 2,
-      employeeCode: "12345", // Changed from username, matches seed
-      email: "manager@vendorpos.com",
-      pinHash: "$2b$10$hashedpassword", // Changed from passwordHash, seed script handles actual hashing
-      firstName: "Manager",
-      lastName: "User",
-      // role: "manager",
-      isActive: true,
-      hourlyRate: "25.00",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      roles: [{id: 100, name: "General Manager (GM) / Store Manager (MemStorage)", description: "MemStorage GM", category: "management_hybrid"}] // Simulated role
-    };
-    this.users.set(2, managerUser);
-
-    // Create default employee
-    const employeeUser: UserWithRoles = {
-      id: 3,
-      employeeCode: "00003", // Changed from username
-      email: "employee@vendorpos.com",
-      pinHash: "$2b$10$hashedpassword", // Changed from passwordHash
-      firstName: "Employee",
-      lastName: "User",
-      // role: "employee",
-      isActive: true,
-      hourlyRate: "15.00",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      roles: [{id: 101, name: "Server / Waiter / Waitress (MemStorage)", description: "MemStorage Server", category: "front_of_house_restaurant"}] // Simulated role
-    };
-    this.users.set(3, employeeUser);
-
-    // Create default categories
-    const defaultCategories: Category[] = [
-      { id: 1, name: "Beverages", description: "Hot and cold beverages", sortOrder: 1, isActive: true },
-      { id: 2, name: "Food", description: "Main food items", sortOrder: 2, isActive: true },
-      { id: 3, name: "Services", description: "Professional services", sortOrder: 3, isActive: true },
-      { id: 4, name: "Digital", description: "Digital products and services", sortOrder: 4, isActive: true }
-    ];
-    
-    defaultCategories.forEach(cat => {
-      this.categories.set(cat.id, cat);
-    });
-
-    // Create default products with modifications
-    const defaultProducts: Product[] = [
-      {
-        id: 1,
-        name: "Premium Coffee",
-        description: "Rich blend of arabica beans",
-        price: "4.99",
-        categoryId: 1,
-        imageUrl: "https://images.unsplash.com/photo-1447933601403-0c6688de566e?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=200",
-        sku: "COF001",
-        stock: 12,
-        minStock: 5,
-        maxStock: 50,
-        isActive: true,
-        hasSizes: true,
-        allowModifications: true,
-        itemType: "product",
-        requiresInventory: true,
-        taxable: true,
-        serviceDetails: null,
-        modificationOptions: [
-          { id: "size-small", name: "Small", category: "size", price: 0 },
-          { id: "size-medium", name: "Medium", category: "size", price: 0.50 },
-          { id: "size-large", name: "Large", category: "size", price: 1.00 },
-          { id: "milk-regular", name: "Regular Milk", category: "milk", price: 0 },
-          { id: "milk-oat", name: "Oat Milk", category: "milk", price: 0.75 },
-          { id: "milk-almond", name: "Almond Milk", category: "milk", price: 0.75 }
-        ],
-        createdAt: new Date()
-      },
-      {
-        id: 2,
-        name: "Gourmet Sandwich",
-        description: "Turkey, avocado, swiss cheese",
-        price: "8.99",
-        categoryId: 2,
-        imageUrl: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=200",
-        sku: "SAN001",
-        stock: 5,
-        minStock: 8,
-        maxStock: 30,
-        isActive: true,
-        hasSizes: false,
-        allowModifications: true,
-        itemType: "product",
-        requiresInventory: true,
-        taxable: true,
-        serviceDetails: null,
-        modificationOptions: [
-          { id: "bread-white", name: "White Bread", category: "bread", price: 0 },
-          { id: "bread-wheat", name: "Wheat Bread", category: "bread", price: 0 },
-          { id: "bread-sourdough", name: "Sourdough", category: "bread", price: 0.50 },
-          { id: "extra-bacon", name: "Extra Bacon", category: "extras", price: 2.00 },
-          { id: "extra-cheese", name: "Extra Cheese", category: "extras", price: 1.50 }
-        ],
-        createdAt: new Date()
-      }
-    ];
-
-    defaultProducts.forEach(product => {
-      this.products.set(product.id, product);
-    });
-
-    // Create default tax rates
-    const defaultTaxRate: TaxRate = {
-      id: 1,
-      name: "Standard Tax",
-      rate: "0.0825",
-      isDefault: true,
-      isActive: true
-    };
-    this.taxRates.set(1, defaultTaxRate);
-
-    // Create default discounts
-    const defaultDiscounts: Discount[] = [
-      {
-        id: 1,
-        name: "Employee Discount",
-        type: "percentage",
-        value: "10.00",
-        isActive: true,
-        requiresManager: false,
-        createdAt: new Date()
-      },
-      {
-        id: 2,
-        name: "Manager Override",
-        type: "percentage",
-        value: "50.00",
-        isActive: true,
-        requiresManager: true,
-        createdAt: new Date()
-      }
-    ];
-
-    defaultDiscounts.forEach(discount => {
-      this.discounts.set(discount.id, discount);
-    });
-
-    // Initialize default settings
-    const defaultSettings = [
-      { key: "store_name", value: "Main Location", category: "general", description: "Store name" },
-      { key: "tax_rate", value: "8.25", category: "general", description: "Default tax rate percentage" },
-      { key: "currency", value: "USD", category: "general", description: "Default currency" },
-      { key: "timezone", value: "America/New_York", category: "general", description: "Store timezone" },
-      { key: "tips_enabled", value: "true", category: "payments", description: "Enable tip collection" },
-      { key: "tip_suggestions", value: "15,18,20,25", category: "payments", description: "Default tip percentages" },
-      { key: "split_payments_enabled", value: "true", category: "payments", description: "Allow split payments" },
-      { key: "manager_override_required", value: "true", category: "security", description: "Require manager for refunds/comps" },
-      { key: "held_orders_require_manager", value: "false", category: "orders", description: "Require manager to access held orders" }
-    ];
-
-    defaultSettings.forEach(setting => {
-      this.settingsMap.set(setting.key, { 
-        id: this.currentId++, 
-        key: setting.key,
-        value: setting.value,
-        category: setting.category,
-        description: setting.description
-      });
-    });
-
-    this.currentId = 100; // Start IDs from 100 to avoid conflicts
-  }
-
-  // User methods
-  async getUsers(): Promise<UserWithTimeClock[]> {
-    const usersArray = Array.from(this.users.values());
-    const result: UserWithTimeClock[] = [];
-    for (const user of usersArray) {
-        const timeClockEvents = await this.getTimeClockEvents(user.id);
-        result.push({
-            ...user, // UserWithRoles
-            timeClockEvents,
-        });
-    }
-    return result;
-  }
-
-  async getUser(id: number): Promise<UserWithRoles | undefined> {
-    const user = this.users.get(id);
-    if (!user) return undefined;
-    return {...user}; // Returns UserWithRoles
-  }
-  
-  async getUserByEmployeeCode(employeeCode: string): Promise<UserWithRoles | undefined> {
-    // Simulate fetching by employee code for MemStorage
-    return Array.from(this.users.values()).find(user => user.employeeCode === employeeCode);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    // This method is problematic with the new schema (employeeCode is primary identifier).
-    // For MemStorage, let's assume it tries to find by email if username was meant as a unique identifier.
-    console.warn("MemStorage.getUserByUsername is deprecated and behavior might be unexpected. Trying to match by email.");
-    const userWithRoles = Array.from(this.users.values()).find(user => user.email === username);
-    if (userWithRoles) {
-      // Strip roles to match original User | undefined signature if needed, though IStorage might evolve this.
-      // For now, let's return the User part.
-      const { roles, ...userBase } = userWithRoles;
-      return userBase as User;
-    }
-    return undefined;
-  }
-
-  async createUser(user: InsertUser): Promise<User> {
-    const id = this.currentId++;
-    // Ensure InsertUser aligns with User schema (employeeCode, pinHash, no role)
-    const newUser: UserWithRoles = {
-      id,
-      employeeCode: user.employeeCode,
-      email: user.email || null,
-      pinHash: user.pinHash || null, // pinHash is optional
-      firstName: user.firstName || null,
-      lastName: user.lastName || null,
-      isActive: user.isActive !== undefined ? user.isActive : true,
-      hourlyRate: user.hourlyRate || null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      roles: [] // New users in MemStorage start with no roles unless explicitly added
-    };
-    this.users.set(id, newUser);
-    // Return type is User, so strip roles for now if strict adherence is needed.
-    const { roles, ...userBase } = newUser;
-    return userBase as User;
-  }
-
-  async updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined> {
-    const existing = this.users.get(id);
-    if (!existing) return undefined;
-
-    const updatedUser: UserWithRoles = {
-        ...existing,
-        ...(user.employeeCode && { employeeCode: user.employeeCode }),
-        ...(user.email && { email: user.email }),
-        ...(user.pinHash && { pinHash: user.pinHash }),
-        ...(user.firstName && { firstName: user.firstName }),
-        ...(user.lastName && { lastName: user.lastName }),
-        ...(user.isActive !== undefined && { isActive: user.isActive }),
-        ...(user.hourlyRate && { hourlyRate: user.hourlyRate }),
-        updatedAt: new Date(),
-        // roles are not updated here for MemStorage
-    };
-    
-    this.users.set(id, updatedUser);
-    const { roles, ...userBase } = updatedUser;
-    return userBase as User;
-  }
-
-  // MemStorage AppRoles stubs
-  async getAppRoles(): Promise<AppRole[]> { return Array.from(this.appRoles.values()); }
-  async getAppRole(id: number): Promise<AppRole | undefined> { return this.appRoles.get(id); }
-  async createAppRole(roleData: InsertAppRole): Promise<AppRole> {
-    const id = this.currentId++;
-    const newRole: AppRole = {
-      id,
-      name: roleData.name,
-      description: roleData.description === undefined ? null : roleData.description,
-      category: roleData.category === undefined ? null : roleData.category,
-    };
-    this.appRoles.set(id, newRole);
-    return newRole;
-  }
-  async updateAppRole(id: number, roleData: Partial<InsertAppRole>): Promise<AppRole | undefined> {
-    const existing = this.appRoles.get(id);
-    if (!existing) return undefined;
-    const updated = { ...existing, ...roleData };
-    this.appRoles.set(id, updated);
-    return updated;
-  }
-  async deleteAppRole(id: number): Promise<boolean> {
-    // Also remove from userAppRoles
-    Array.from(this.userAppRoles.entries()).forEach(([key, val]) => {
-      if (val.roleId === id) this.userAppRoles.delete(key);
-    });
-    return this.appRoles.delete(id);
-  }
-
-  // MemStorage UserAppRoles stubs
-  async assignRoleToUser(userId: number, roleId: number): Promise<UserAppRole> {
-    const assignment: UserAppRole = { userId, roleId };
-    this.userAppRoles.set(`${userId}-${roleId}`, assignment);
-    // Add to user's roles array in MemStorage
-    const user = this.users.get(userId);
-    const role = this.appRoles.get(roleId);
-    if (user && role && !user.roles.find(r => r.id === roleId)) {
-      user.roles.push(role);
-    }
-    return assignment;
-  }
-  async removeRoleFromUser(userId: number, roleId: number): Promise<boolean> {
-    // Remove from user's roles array in MemStorage
-    const user = this.users.get(userId);
-    if (user) {
-      user.roles = user.roles.filter(r => r.id !== roleId);
-    }
-    return this.userAppRoles.delete(`${userId}-${roleId}`);
-  }
-  async getUserRoles(userId: number): Promise<AppRole[]> {
-    const user = this.users.get(userId);
-    return user?.roles || [];
-  }
-
-  async deleteUser(id: number): Promise<boolean> {
-    return this.users.delete(id);
-  }
-
-  // Time Clock methods
-  async createTimeClockEvent(userId: number, eventType: "clock-in" | "clock-out" | "break-start" | "break-end"): Promise<TimeClockEvent> {
-    const id = this.currentId++;
-    const now = new Date();
-    const newEvent: TimeClockEvent = {
-      id,
-      userId,
-      eventType,
-      eventTime: now,
-      createdAt: now,
-    };
-    this.timeClockEvents.set(id, newEvent);
-    return newEvent;
-  }
-
-  async getLatestTimeClockEvent(userId: number): Promise<TimeClockEvent | undefined> {
-    return Array.from(this.timeClockEvents.values())
-      .filter(e => e.userId === userId)
-      .sort((a, b) => b.eventTime.getTime() - a.eventTime.getTime())[0];
-  }
-
-  async getTimeClockEvents(userId: number, startDate?: Date, endDate?: Date): Promise<TimeClockEvent[]> {
-    let events = Array.from(this.timeClockEvents.values())
-      .filter(e => e.userId === userId);
-
-    if (startDate) {
-      events = events.filter(e => e.eventTime >= startDate);
-    }
-
-    if (endDate) {
-      events = events.filter(e => e.eventTime <= endDate);
-    }
-
-    return events.sort((a, b) => b.eventTime.getTime() - a.eventTime.getTime());
-  }
-
-  // Category methods
-  async getCategories(): Promise<Category[]> {
-    return Array.from(this.categories.values())
-      .filter(cat => cat.isActive)
-      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-  }
-
-  async createCategory(category: InsertCategory): Promise<Category> {
-    const id = this.currentId++;
-    const newCategory: Category = { 
-      id, 
-      name: category.name, 
-      description: category.description || null,
-      sortOrder: category.sortOrder || 0,
-      isActive: category.isActive !== false
-    };
-    this.categories.set(id, newCategory);
-    return newCategory;
-  }
-
-  async updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category | undefined> {
-    const existing = this.categories.get(id);
-    if (!existing) return undefined;
-
-    const updated = { ...existing, ...category };
-    this.categories.set(id, updated);
-    return updated;
-  }
-
-  async deleteCategory(id: number): Promise<boolean> {
-    return this.categories.delete(id);
-  }
-
-  // Product methods
-  async getProducts(): Promise<ProductWithCategory[]> {
-    const productsArray = Array.from(this.products.values());
-    return productsArray.map(product => {
-      const mods = product.modificationOptions as ProductModification[] | undefined | null;
-      return {
-        ...product,
-        category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
-        modificationOptions: mods || null
-      };
-    }) as ProductWithCategory[]; // Cast the whole result
-  }
-
-  async getProduct(id: number): Promise<ProductWithCategory | undefined> {
-    const product = this.products.get(id);
-    if (!product) return undefined;
-    
-    const mods = product.modificationOptions as ProductModification[] | undefined | null;
-    return {
-      ...product,
-      category: product.categoryId ? this.categories.get(product.categoryId) : undefined,
-      modificationOptions: mods || null
-    } as ProductWithCategory; // Cast the whole result
-  }
-
-  async createProduct(product: InsertProduct): Promise<Product> {
-    const id = this.currentId++;
-    const newProduct: Product = { 
-      id, 
-      name: product.name,
-      description: product.description || null,
-      price: product.price,
-      categoryId: product.categoryId || null,
-      imageUrl: product.imageUrl || null,
-      sku: product.sku,
-      stock: product.stock || 0,
-      minStock: product.minStock || null,
-      maxStock: product.maxStock || null,
-      isActive: product.isActive !== false,
-      hasSizes: product.hasSizes || false,
-      allowModifications: product.allowModifications !== false,
-      modificationOptions: product.modificationOptions || null,
-      itemType: product.itemType || "product",
-      requiresInventory: product.requiresInventory !== false,
-      taxable: product.taxable !== false,
-      serviceDetails: product.serviceDetails || null,
-      createdAt: new Date()
-    };
-    this.products.set(id, newProduct);
-    return newProduct;
-  }
-
-  async updateProduct(id: number, product: Partial<InsertProduct>): Promise<Product | undefined> {
-    const existing = this.products.get(id);
-    if (!existing) return undefined;
-
-    const updated = { ...existing, ...product };
-    this.products.set(id, updated);
-    return updated;
-  }
-
-  async deleteProduct(id: number): Promise<boolean> {
-    return this.products.delete(id);
-  }
-
-  async updateProductStock(id: number, stock: number): Promise<Product | undefined> {
-    const product = this.products.get(id);
-    if (!product) return undefined;
-
-    product.stock = stock;
-    this.products.set(id, product);
-    return product;
-  }
-
-  // Order methods
-  async getOrders(filters?: { status?: string }): Promise<OrderWithDetails[]> {
-    let ordersArray = Array.from(this.orders.values());
-
-    if (filters?.status) {
-      ordersArray = ordersArray.filter(order => order.status === filters.status);
-    }
-
-    const ordersWithDetails: OrderWithDetails[] = [];
-
-    for (const order of ordersArray) {
-      const items = await this.getOrderItems(order.id);
-      const payments = await this.getPayments(order.id);
-      const createdByUser = order.createdBy ? this.users.get(order.createdBy) : undefined;
-      const managedByUser = order.managedBy ? this.users.get(order.managedBy) : undefined;
-      
-      ordersWithDetails.push({ 
-        ...order, 
-        items, 
-        payments,
-        createdByUser,
-        managedByUser
-      });
-    }
-
-    return ordersWithDetails.sort((a, b) => 
-      new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
-    );
-  }
-
-  async getOrder(id: number): Promise<OrderWithDetails | undefined> {
-    const order = this.orders.get(id);
-    if (!order) return undefined;
-
-    const items = await this.getOrderItems(id);
-    const payments = await this.getPayments(id);
-    const createdByUser = order.createdBy ? this.users.get(order.createdBy) : undefined;
-    const managedByUser = order.managedBy ? this.users.get(order.managedBy) : undefined;
-    
-    return { 
-      ...order, 
-      items, 
-      payments,
-      createdByUser,
-      managedByUser
-    };
-  }
-
-  async createOrder(order: InsertOrderApiPayload): Promise<Order> { // Modified parameter type
-    const id = this.currentId++;
-    this.lastOrderNumberSuffix++; // Increment for a new order
-    const orderNumber = `ORD-${String(this.lastOrderNumberSuffix).padStart(6, '0')}`; // Generate sequential number
-    const newOrder: Order = {
-      id,
-      orderNumber, // Use server-generated number
-      customerName: order.customerName || null,
-      customerPhone: order.customerPhone || null,
-      customerEmail: order.customerEmail || null,
-      subtotal: order.subtotal,
-      tax: order.tax,
-      tipAmount: order.tipAmount || "0.00",
-      discountAmount: order.discountAmount || "0.00",
-      total: order.total,
-      status: order.status || "pending",
-      orderType: order.orderType || "dine-in",
-      tableNumber: order.tableNumber || null,
-      notes: order.notes || null,
-      createdBy: order.createdBy || null,
-      managedBy: order.managedBy || null,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    this.orders.set(id, newOrder);
-    return newOrder;
-  }
-
-  async updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined> {
-    const existing = this.orders.get(id);
-    if (!existing) return undefined;
-
-    const updated = { ...existing, ...order, updatedAt: new Date() };
-    this.orders.set(id, updated);
-    return updated;
-  }
-
-  async updateOrderStatus(id: number, status: string, managedBy?: number): Promise<Order | undefined> {
-    const order = this.orders.get(id);
-    if (!order) return undefined;
-
-    order.status = status;
-    order.updatedAt = new Date();
-    if (managedBy) {
-      order.managedBy = managedBy;
-    }
-    
-    this.orders.set(id, order);
-    return order;
-  }
-
-  // Order Item methods
-  async createOrderItem(orderItem: InsertOrderItem): Promise<OrderItem> {
-    const id = this.currentId++;
-    const newOrderItem: OrderItem = { 
-      id,
-      orderId: orderItem.orderId,
-      productId: orderItem.productId,
-      quantity: orderItem.quantity,
-      unitPrice: orderItem.unitPrice,
-      totalPrice: orderItem.totalPrice,
-      modifications: orderItem.modifications || null,
-      specialInstructions: orderItem.specialInstructions || null,
-      isComped: orderItem.isComped || false,
-      compedBy: orderItem.compedBy || null,
-      compReason: orderItem.compReason || null
-    };
-    this.orderItems.set(id, newOrderItem);
-    return newOrderItem;
-  }
-
-  async updateOrderItem(id: number, orderItem: Partial<InsertOrderItem>): Promise<OrderItem | undefined> {
-    const existing = this.orderItems.get(id);
-    if (!existing) return undefined;
-
-    const updated = { ...existing, ...orderItem };
-    this.orderItems.set(id, updated);
-    return updated;
-  }
-
-  async deleteOrderItem(id: number): Promise<boolean> {
-    return this.orderItems.delete(id);
-  }
-
-  async compOrderItem(id: number, compedBy: number, reason: string): Promise<OrderItem | undefined> {
-    const item = this.orderItems.get(id);
-    if (!item) return undefined;
-
-    item.isComped = true;
-    item.compedBy = compedBy;
-    item.compReason = reason;
-    
-    this.orderItems.set(id, item);
-    return item;
-  }
-
-  async getOrderItems(orderId: number): Promise<(OrderItem & { product: Product })[]> {
-    const items = Array.from(this.orderItems.values())
-      .filter(item => item.orderId === orderId);
-    
-    return items.map(item => ({
-      ...item,
-      product: this.products.get(item.productId)!
-    }));
-  }
-
-  // Payment methods
-  async createPayment(payment: InsertPayment): Promise<Payment> {
-    const id = this.currentId++;
-    const newPayment: Payment = {
-      id,
-      orderId: payment.orderId,
-      paymentMethod: payment.paymentMethod,
-      amount: payment.amount,
-      stripePaymentId: payment.stripePaymentId || null,
-      cashReceived: payment.cashReceived || null,
-      changeGiven: payment.changeGiven || null,
-      status: payment.status || "completed",
-      processedBy: payment.processedBy || null,
-      createdAt: new Date()
-    };
-    this.payments.set(id, newPayment);
-    return newPayment;
-  }
-
-  async getPayments(orderId: number): Promise<Payment[]> {
-    return Array.from(this.payments.values())
-      .filter(payment => payment.orderId === orderId);
-  }
-
-  async processRefund(paymentId: number, amount: number, processedBy: number): Promise<Payment> {
-    const id = this.currentId++;
-    const originalPayment = this.payments.get(paymentId);
-    
-    const refundPayment: Payment = {
-      id,
-      orderId: originalPayment?.orderId || 0,
-      paymentMethod: originalPayment?.paymentMethod || "card",
-      amount: `-${amount}`,
-      stripePaymentId: null,
-      cashReceived: null,
-      changeGiven: null,
-      status: "completed",
-      processedBy,
-      createdAt: new Date()
-    };
-    
-    this.payments.set(id, refundPayment);
-    return refundPayment;
-  }
-
-  // Discount methods
-  async getDiscounts(): Promise<Discount[]> {
-    return Array.from(this.discounts.values())
-      .filter(discount => discount.isActive);
-  }
-
-  async createDiscount(discount: InsertDiscount): Promise<Discount> {
-    const id = this.currentId++;
-    const newDiscount: Discount = {
-      id,
-      name: discount.name,
-      type: discount.type,
-      value: discount.value,
-      isActive: discount.isActive !== false,
-      requiresManager: discount.requiresManager || false,
-      createdAt: new Date()
-    };
-    this.discounts.set(id, newDiscount);
-    return newDiscount;
-  }
-
-  async updateDiscount(id: number, discount: Partial<InsertDiscount>): Promise<Discount | undefined> {
-    const existing = this.discounts.get(id);
-    if (!existing) return undefined;
-
-    const updated = { ...existing, ...discount };
-    this.discounts.set(id, updated);
-    return updated;
-  }
-
-  async deleteDiscount(id: number): Promise<boolean> {
-    return this.discounts.delete(id);
-  }
-
-  // Tax Rate methods
-  async getTaxRates(): Promise<TaxRate[]> {
-    return Array.from(this.taxRates.values())
-      .filter(rate => rate.isActive);
-  }
-
-  async getDefaultTaxRate(): Promise<TaxRate | undefined> {
-    return Array.from(this.taxRates.values())
-      .find(rate => rate.isDefault && rate.isActive);
-  }
-
-  async createTaxRate(taxRate: InsertTaxRate): Promise<TaxRate> {
-    const id = this.currentId++;
-    const newTaxRate: TaxRate = {
-      id,
-      name: taxRate.name,
-      rate: taxRate.rate,
-      isDefault: taxRate.isDefault || false,
-      isActive: taxRate.isActive !== false
-    };
-    this.taxRates.set(id, newTaxRate);
-    return newTaxRate;
-  }
-
-  async updateTaxRate(id: number, taxRate: Partial<InsertTaxRate>): Promise<TaxRate | undefined> {
-    const existing = this.taxRates.get(id);
-    if (!existing) return undefined;
-
-    const updated = { ...existing, ...taxRate };
-    this.taxRates.set(id, updated);
-    return updated;
-  }
-
-  // Audit Log methods
-  async createAuditLog(log: InsertAuditLog): Promise<AuditLog> {
-    const id = this.currentId++;
-    const newLog: AuditLog = {
-      id,
-      userId: log.userId || null,
-      action: log.action,
-      entityType: log.entityType,
-      entityId: log.entityId || null,
-      oldValues: log.oldValues || null,
-      newValues: log.newValues || null,
-      reason: log.reason || null,
-      createdAt: new Date()
-    };
-    this.auditLogs.set(id, newLog);
-    return newLog;
-  }
-
-  async getAuditLogs(entityType?: string, entityId?: number): Promise<AuditLog[]> {
-    let logs = Array.from(this.auditLogs.values());
-    
-    if (entityType) {
-      logs = logs.filter(log => log.entityType === entityType);
-    }
-    
-    if (entityId) {
-      logs = logs.filter(log => log.entityId === entityId);
-    }
-    
-    return logs.sort((a, b) => (b.createdAt || new Date()).getTime() - (a.createdAt || new Date()).getTime());
-  }
-
-  // Settings methods
-  async getSetting(key: string): Promise<Setting | undefined> {
-    return this.settingsMap.get(key);
-  }
-
-  async setSetting(key: string, value: string, category?: string, description?: string): Promise<Setting> {
-    const existing = this.settingsMap.get(key);
-    if (existing) {
-      existing.value = value;
-      if (category) existing.category = category;
-      if (description) existing.description = description;
-      this.settingsMap.set(key, existing);
-      return existing;
-    } else {
-      const id = this.currentId++;
-      const newSetting: Setting = { 
-        id, 
-        key, 
-        value,
-        category: category || "general",
-        description: description || null
-      };
-      this.settingsMap.set(key, newSetting);
-      return newSetting;
-    }
-  }
-
-  async getSettings(category?: string): Promise<Setting[]> {
-    const settings = Array.from(this.settingsMap.values());
-    if (category) {
-      return settings.filter(setting => setting.category === category);
-    }
-    return settings;
-  }
-
-  // Reports and Stats
-  async getTodayStats(): Promise<{
-    todaySales: number;
-    todayOrders: number;
-    lowStockCount: number;
-    activeProductCount: number;
-    todayTips: number;
-    averageOrderValue: number;
-  }> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const todayOrders = Array.from(this.orders.values())
-      .filter(order => {
-        const orderDate = new Date(order.createdAt!);
-        return orderDate >= today && order.status === "completed";
-      });
-
-    const todaySales = todayOrders.reduce((sum, order) => 
-      sum + parseFloat(order.total), 0
-    );
-
-    const todayTips = todayOrders.reduce((sum, order) => 
-      sum + parseFloat(order.tipAmount || "0"), 0
-    );
-
-    const lowStockCount = Array.from(this.products.values())
-      .filter(product => product.stock <= (product.minStock || 5)).length;
-
-    const activeProductCount = Array.from(this.products.values())
-      .filter(product => product.isActive).length;
-
-    const averageOrderValue = todayOrders.length > 0 ? todaySales / todayOrders.length : 0;
-
-    return {
-      todaySales,
-      todayOrders: todayOrders.length,
-      lowStockCount,
-      activeProductCount,
-      todayTips,
-      averageOrderValue
-    };
-  }
-
-  async getSalesReport(startDate: Date, endDate: Date): Promise<any> {
-    const orders = Array.from(this.orders.values())
-      .filter(order => {
-        const orderDate = new Date(order.createdAt!);
-        return orderDate >= startDate && orderDate <= endDate && order.status === "completed";
-      });
-
-    const totalSales = orders.reduce((sum, order) => sum + parseFloat(order.total), 0);
-    const totalTips = orders.reduce((sum, order) => sum + parseFloat(order.tipAmount || "0"), 0);
-    const averageOrderValue = orders.length > 0 ? totalSales / orders.length : 0;
-
-    return {
-      period: { startDate, endDate },
-      totalSales,
-      totalTips,
-      totalOrders: orders.length,
-      averageOrderValue,
-      orders
-    };
-  }
-
-  async getEmployeeReport(userId?: number, startDate?: Date, endDate?: Date): Promise<any> {
-    let timeClockEvents = Array.from(this.timeClockEvents.values());
-    
-    if (userId) {
-      timeClockEvents = timeClockEvents.filter(tc => tc.userId === userId);
-    }
-    
-    if (startDate) {
-      timeClockEvents = timeClockEvents.filter(tc => tc.eventTime >= startDate);
-    }
-    
-    if (endDate) {
-      timeClockEvents = timeClockEvents.filter(tc => tc.eventTime <= endDate);
-    }
-
-    const totalHours = 0; // Placeholder
-    
-    return {
-      userId,
-      period: { startDate, endDate },
-      totalHours,
-      timeClockEvents: timeClockEvents.sort((a, b) => b.eventTime.getTime() - a.eventTime.getTime())
     };
   }
 }

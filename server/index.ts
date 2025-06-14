@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from 'express-session';
+import connectSqlite3 from 'connect-sqlite3';
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { User, AppRole } from "@shared/schema"; // Import User and AppRole types
@@ -16,8 +17,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // Session middleware
-// TODO: Replace MemoryStore with a persistent store for production (e.g., connect-pg-simple or connect-sqlite3)
+const SQLiteStore = connectSqlite3(session);
 app.use(session({
+  store: new SQLiteStore({
+    db: 'sessions.db',
+    dir: './db'
+  }),
   secret: process.env.SESSION_SECRET || 'your-very-secret-key-for-pos', // Replace with a strong secret from env variables
   resave: false,
   saveUninitialized: false, // Set to false, common practice

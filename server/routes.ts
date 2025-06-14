@@ -230,12 +230,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const finalUserData = { ...parsedUserData, pinHash };
       const newUser = await storage.createUser(finalUserData);
 
-      // TODO: Handle role assignment (e.g., if `roles` is an array of role IDs)
-      // if (roles && Array.isArray(roles) && newUser) {
-      //   await storage.setUserRoles(newUser.id, roles);
-      // }
-      // For now, fetch the user again to include any default roles or verify creation
-      const userWithDetails = await storage.getUser(newUser.id);
+      if (roles && Array.isArray(roles) && newUser && newUser.id) {
+        try {
+          for (const roleId of roles) {
+            if (typeof roleId === 'number') {
+              await storage.assignRoleToUser(newUser.id, roleId);
+            } else {
+              console.warn(`Invalid roleId type: ${typeof roleId} for user ${newUser.id}`);
+            }
+          }
+        } catch (roleError) {
+          // Log the error but don't fail the entire user creation,
+          // as user record itself was created. Client can be notified or handle this.
+          console.error(`Error assigning roles to new user ${newUser.id}:`, roleError);
+          // Optionally, could add a partial success message or flag to the response
+        }
+      }
+
+      const userWithDetails = await storage.getUser(newUser.id); // Fetch user again to include roles
       res.status(201).json(userWithDetails);
 
     } catch (error) {
@@ -321,10 +333,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found or update failed" });
       }
 
-      // TODO: Handle role assignment update
-      // if (roles && Array.isArray(roles)) {
-      //   await storage.setUserRoles(updatedUser.id, roles);
-      // }
+      if (roles && Array.isArray(roles)) {
+        try {
+          const currentRoles = await storage.getUserRoles(id);
+          const currentRoleIds = currentRoles.map(role => role.id);
+
+          const rolesToAdd = roles.filter((roleId: any) => typeof roleId === 'number' && !currentRoleIds.includes(roleId));
+          const rolesToRemove = currentRoleIds.filter((roleId: any) => !roles.includes(roleId));
+
+          for (const roleId of rolesToAdd) {
+            await storage.assignRoleToUser(id, roleId);
+          }
+          for (const roleId of rolesToRemove) {
+            await storage.removeRoleFromUser(id, roleId);
+          }
+        } catch (roleError) {
+          console.error(`Error updating roles for user ${id}:`, roleError);
+          // Log error, but let the main user update succeed.
+          // Client could be informed about partial success if necessary.
+        }
+      } else if (roles && Array.isArray(roles) && roles.length === 0) { // Empty array means remove all roles
+        try {
+          const currentRoles = await storage.getUserRoles(id);
+          for (const role of currentRoles) {
+            await storage.removeRoleFromUser(id, role.id);
+          }
+        } catch (roleError) {
+          console.error(`Error removing all roles for user ${id}:`, roleError);
+        }
+      }
+      // If 'roles' key is not in req.body, no changes to roles are made.
       
       const userWithDetails = await storage.getUser(updatedUser.id); // Fetch again to get full details including roles
       res.json(userWithDetails);
