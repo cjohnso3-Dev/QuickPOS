@@ -1,13 +1,15 @@
 # QuickPOS
 
-QuickPOS is a Point of Sale (POS) system designed to streamline the ordering and checkout process for businesses. It includes features such as role-based access control, employee time tracking, and a user-friendly interface for managing products and orders.
+QuickPOS is a Point of Sale (POS) system (still in dev) designed to streamline the ordering and checkout process for businesses. It includes features such as role-based access control, employee time tracking, and a user-friendly interface for managing products and orders.
 
-## Table of Contents
-- [Project Setup](#project-setup)
-- [Directory Structure](#directory-structure)
-- [Dependencies](#dependencies)
-- [Running the Project](#running-the-project)
-- [Contributing](#contributing)
+
+
+- ## Screens
+<img width="1218" height="870" alt="image" src="https://github.com/user-attachments/assets/630dc89e-a53b-487b-aa98-8604f84bc873" />
+
+
+<img width="1218" height="870" alt="image" src="https://github.com/user-attachments/assets/badbed5f-601c-4c40-bb1f-11dc29ea0afd" />
+
 
 ## Project Setup
 
